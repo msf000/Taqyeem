@@ -1,40 +1,90 @@
-import React, { useState } from 'react';
-import { Plus, Search, MoreVertical, School as SchoolIcon, Edit2, Trash2, Eye, Settings } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, School as SchoolIcon, Edit2, Trash2, Eye, Settings, Loader2 } from 'lucide-react';
 import { School } from '../types';
-
-const MOCK_SCHOOLS: School[] = [
-  {
-    id: '1',
-    name: 'مدرسة الرياض النموذجية',
-    stage: 'الثانوية',
-    type: 'بنين',
-    ministryId: '123456',
-    managerName: 'أحمد العتيبي',
-    evaluatorName: 'خالد المطيري'
-  },
-  {
-    id: '2',
-    name: 'مدرسة الملك فهد',
-    stage: 'المتوسطة',
-    type: 'بنين',
-    ministryId: '987654',
-    managerName: 'محمد السالم',
-    evaluatorName: 'سعيد القحطاني'
-  }
-];
+import { supabase } from '../supabaseClient';
 
 export default function SchoolManagement() {
-  const [schools, setSchools] = useState<School[]>(MOCK_SCHOOLS);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Form State
   const [newSchool, setNewSchool] = useState<Partial<School>>({});
 
-  const handleAddSchool = () => {
-    if (newSchool.name && newSchool.ministryId) {
-      setSchools([...schools, { ...newSchool, id: Date.now().toString() } as School]);
+  // Fetch Schools
+  const fetchSchools = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('schools')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Map DB snake_case to CamelCase types
+      const mappedSchools: School[] = (data || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        stage: item.stage,
+        type: item.type,
+        ministryId: item.ministry_id,
+        managerName: item.manager_name,
+        evaluatorName: item.evaluator_name
+      }));
+
+      setSchools(mappedSchools);
+    } catch (error) {
+      console.error('Error fetching schools:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSchools();
+  }, []);
+
+  const handleAddSchool = async () => {
+    if (!newSchool.name || !newSchool.ministryId) return;
+
+    setIsSaving(true);
+    try {
+      const payload = {
+        name: newSchool.name,
+        stage: newSchool.stage,
+        type: newSchool.type,
+        ministry_id: newSchool.ministryId,
+        manager_name: newSchool.managerName,
+        evaluator_name: newSchool.evaluatorName
+      };
+
+      const { error } = await supabase.from('schools').insert([payload]);
+      
+      if (error) throw error;
+
+      await fetchSchools(); // Refresh list
       setIsAdding(false);
       setNewSchool({});
+    } catch (error) {
+      console.error('Error adding school:', error);
+      alert('حدث خطأ أثناء حفظ المدرسة');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSchool = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه المدرسة؟')) return;
+
+    try {
+      const { error } = await supabase.from('schools').delete().eq('id', id);
+      if (error) throw error;
+      setSchools(schools.filter(s => s.id !== id));
+    } catch (error) {
+      console.error('Error deleting school:', error);
+      alert('لا يمكن حذف المدرسة، قد تكون مرتبطة بمعلمين');
     }
   };
 
@@ -114,48 +164,52 @@ export default function SchoolManagement() {
               إلغاء
             </button>
             <button 
-              onClick={handleAddSchool} 
-              className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
+              onClick={handleAddSchool}
+              disabled={isSaving}
+              className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
             >
+              {isSaving ? <Loader2 className="animate-spin" size={18} /> : null}
               حفظ المدرسة
             </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6">
-        <h3 className="font-bold text-gray-700 text-lg">مدارسي</h3>
-        {schools.map(school => (
-          <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h4 className="text-xl font-bold text-gray-900">{school.name}</h4>
-                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{school.stage}</span>
-                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">{school.ministryId}</span>
+      {isLoading ? (
+        <div className="flex justify-center p-12">
+          <Loader2 className="animate-spin text-primary-600" size={32} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          <h3 className="font-bold text-gray-700 text-lg">مدارسي ({schools.length})</h3>
+          {schools.length === 0 && <p className="text-gray-500">لا توجد مدارس مضافة.</p>}
+          {schools.map(school => (
+            <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h4 className="text-xl font-bold text-gray-900">{school.name}</h4>
+                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{school.stage}</span>
+                  <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">{school.ministryId}</span>
+                </div>
+                <div className="flex gap-6 text-sm text-gray-500">
+                  <span>المدير: {school.managerName}</span>
+                  <span>المقيم: {school.evaluatorName}</span>
+                  <span>النوع: {school.type}</span>
+                </div>
               </div>
-              <div className="flex gap-6 text-sm text-gray-500">
-                <span>المدير: {school.managerName}</span>
-                <span>المقيم: {school.evaluatorName}</span>
-                <span>النوع: {school.type}</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-50 text-primary-700 hover:bg-primary-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Plus size={16} />
-                إضافة معلم
-              </button>
               
-              <div className="flex bg-gray-50 rounded-lg p-1">
-                <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="عرض"><Eye size={18} /></button>
-                <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="تحرير"><Edit2 size={18} /></button>
-                <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="إعدادات"><Settings size={18} /></button>
-                <button className="p-2 hover:bg-white hover:shadow rounded-md text-red-600" title="حذف"><Trash2 size={18} /></button>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="flex bg-gray-50 rounded-lg p-1">
+                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="عرض"><Eye size={18} /></button>
+                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="تحرير"><Edit2 size={18} /></button>
+                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="إعدادات"><Settings size={18} /></button>
+                  <button onClick={() => handleDeleteSchool(school.id)} className="p-2 hover:bg-white hover:shadow rounded-md text-red-600" title="حذف"><Trash2 size={18} /></button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

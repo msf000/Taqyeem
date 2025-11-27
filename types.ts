@@ -1,8 +1,15 @@
+
 export enum UserRole {
   ADMIN = 'مدير النظام',
   PRINCIPAL = 'مدير المدرسة',
   TEACHER = 'المعلم',
   EVALUATOR = 'المقيم'
+}
+
+export interface User {
+  id: string;
+  name: string;
+  role: UserRole;
 }
 
 export enum TeacherCategory {

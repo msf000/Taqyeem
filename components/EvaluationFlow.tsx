@@ -1,225 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2 } from 'lucide-react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
-
-const INDICATORS: EvaluationIndicator[] = [
-  {
-    id: '1',
-    text: 'أداء الواجبات الوظيفية',
-    weight: 10,
-    description: 'يطبق الأنظمة وقواعد السلوك الوظيفية وأخلاقيات بيئة التعلم...',
-    evaluationCriteria: [
-        'يطبق الأنظمة وقواعد السلوك الوظيفية وأخلاقيات بيئة التعلم.',
-        'يعزز الانتماء والولاء الوطني والقيم الوطنية.',
-        'يحافظ على خصوصية المعلومات المهنية، وحماية البيانات والمعلومات التي تتعلق بالعمل أو الأنشطة المهنية من الوصول غير المصرح به.',
-        'الامتثال للقوانين واللوائح وسياسات وإجراءات العمل التي تتوافق مع القوانين واللوائح المحلية والدولية.'
-    ],
-    verificationIndicators: [
-        'سجل الدوام الرسمي',
-        'خطة توزيع المقرر',
-        'سجل المناوبة والإشراف',
-        'سجل الانتظار',
-        'ملاحظة الأداء',
-        'الزيارات الصفية'
-    ],
-    rubric: {}
-  },
-  {
-    id: '2',
-    text: 'التفاعل مع المجتمع المهني',
-    weight: 10,
-    description: 'المشاركة الفعّالة في مجتمعات وشبكات التعليم...',
-    evaluationCriteria: [
-        'التعلم المستمر من خلال التطوير المهني، وورش العمل، والدورات والمؤتمرات.',
-        'التعاون والتواصل لبناء شبكات مهنية، تبادل الأفكار، ومواجهة التحديات التعليمية.',
-        'الإسهام في التطوير عبر الأبحاث، تطوير المناهج، ودعم السياسات التعليمية.',
-        'الإرشاد والتوجيه بدعم المعلمين الجدد ومشاركة الخبرات.',
-        'التفكير الذاتي لتحسين الممارسات وبناء بيئة تعليمية تعزز التعلم المستمر والتطوير.'
-    ],
-    verificationIndicators: [
-        'سجل مجتمعات التعلم',
-        'سجل تبادل الزيارات',
-        'تقرير درس تطبيقي',
-        'شهادات حضور الدورات',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '3',
-    text: 'التفاعل مع أولياء الأمور',
-    weight: 10,
-    description: 'المساهمة في دعم وتحقيق بيئة تعليمية فعالة لتحسين التحصيل الدراسي للطلبة...',
-    evaluationCriteria: [
-        'تفعيل قنوات اتصال فعالة مع أولياء الأمور لمناقشة تقدم الطلبة والتحديات التي تواجههم.',
-        'تشجيع أولياء الأمور على المشاركة في العملية التعليمية، مثل المساعدة في الواجبات المنزلية وتوفير بيئة داعمة.',
-        'التواصل المستمر مع أولياء الأمور باستخدام أساليب إيجابية لمناقشة التقدم العلمي والاجتماعي للمتعلمين وخطط التطوير المستقبلية للطلبة وإيجاد حلول مشتركة.',
-        'الاستجابة والاستماع الى مخاوف أولياء الأمور والعمل بشكل تعاوني لمعالجتها.'
-    ],
-    verificationIndicators: [
-        'صور من الجمعية العمومية لأولياء الأمور',
-        'تقرير اجتماع ولي الامر مع المعلم',
-        'الخطة الأسبوعية',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '4',
-    text: 'التنويع في استراتيجيات التدريس',
-    weight: 10,
-    description: 'قدرة المعلم على استخدام أساليب وطرائق تدريس مناسبة لتعزيز عملية التعلم.',
-    evaluationCriteria: [
-        'استخدام استراتيجيات تدريس مناسبة للموقف التعليمي.',
-        'استخدام استراتيجيات تدريس مناسبة لحاجات وميول المتعلمين.',
-        'استخدام استراتيجيات تعمل على تنمية القدرة على التفكير والابداع.',
-        'استخدام استراتيجيات تنمي مهارات الحوار والمناقشة.'
-    ],
-    verificationIndicators: [
-        'تقرير تطبيق استراتيجية',
-        'ملف انجاز المعلم',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '5',
-    text: 'تحسين نتائج المتعلمين',
-    weight: 10,
-    description: 'عملية تحسين التحصيل الدراسي تهدف إلى معالجة نقاط الضعف وتطوير نقاط القوة...',
-    evaluationCriteria: [
-        'تحديد أهداف ومعايير واضحة: ليعرف المتعلمون ما يتوقع منهم تحقيقه.',
-        'تقديم إفادة سريعة ومحددة: فور ملاحظة الأداء، مع التركيز على الإيجابيات وتقديم اقتراحات بناءة للتحسين.',
-        'تكييف الإفادة وفق للاحتياجات الفردية: لضمان التفاعل الفعال وتشجيع المتعلمين على طرح الأسئلة وتطبيق الاقتراحات.',
-        'تعزيز الثقة وتشجيع التطور: من خلال تقديم ملاحظات تشجيعية وفرص لتحسين الأداء.',
-        'استخدام التكنولوجيا: لتقديم الإفادة بطرق مبتكرة مثل البريد الإلكتروني ومنصات التعلم.'
-    ],
-    verificationIndicators: [
-        'نتائج الاختبار القبلي والبعدي',
-        'كشف متابعة الطلاب',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '6',
-    text: 'إعداد وتنفيذ خطة التعلم',
-    weight: 10,
-    description: 'تمكن المعلم من إعداد خطة منظمة تساعد على تحديد الأهداف التعليمية وتنفيذها بوضوح...',
-    evaluationCriteria: [
-        'اعداد خطة التعلم وفق السياسات المنظمة لذلك، وبما يتواءم مع تشخيص واقع المتعلمين.',
-        'تحقيق الأهداف التعليمية وعناصر المواد المسندة إليه.',
-        'التخطيط للأنشطة الصفية والأنشطة غير الصفية من قبل المعلم الخبير (إن وجد).',
-        'مشاركة المعلم الممارس والمعلم المتقدم في الإعداد والتنفيذ للأنشطة الصفية والأنشطة غير الصفية.',
-        'تفهم الخصائص النفسية للمرحلة العمرية التي يقوم بتدريسها.'
-    ],
-    verificationIndicators: [
-        'خطة توزيع المنهج',
-        'نموذج اعداد الدروس',
-        'نماذج من الواجبات والاختبارات',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '7',
-    text: 'توظيف تقنيات ووسائل التعلم المناسبة',
-    weight: 10,
-    description: 'قدرة المعلم على استخدام الوسائل التعليمية والأدوات المتنوعة المناسبة للموقف التعليمي...',
-    evaluationCriteria: [
-        'تنويع تقنيات ووسائل التعلم المناسبة بغرض تحقيق الأهداف التعليمية بفاعلية.',
-        'مراعاة الفروق الفردية بين المتعلمين لتيسير نقل الخبرات التعليمية بسهولة ووضوح.',
-        'استخدام التقنيات والوسائل التعليمية المناسبة لحاجات وانماط المتعلمين.',
-        'اكساب الطلاب المعرفة وتنمية قدراتهم على التأمل والملاحظة والتفكير العلمي للوصول إلى حل المشكلات.'
-    ],
-    verificationIndicators: [
-        'صور من الوسائل التعليمية المستخدمة',
-        'تقرير عن برنامج تقني',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '8',
-    text: 'تهيئة بيئة تعليمية',
-    weight: 5,
-    description: 'قدرة المعلم على ممارسة عمليات توفر للمتعلمين فرصًا متكافئة...',
-    evaluationCriteria: [
-        'توفير بيئة تعليمية آمنة تشجع على التعلم وتدعم النمو الشخصي والأكاديمي.',
-        'توفير بيئة تعليمية تحقق الأمان النفسي وتتسم بالاحترام المتبادل.',
-        'توفير بيئة تعليمية تمكن المتعلمين من التعبير عن أنفسهم ومشاركة أفكارهم مع أقرانهم.',
-        'إثارة دافعية المتعلمين من خلال التنويع في أساليب التعلم.'
-    ],
-    verificationIndicators: [
-        'تقرير تصنيف الطلاب وفق أنماط التعلم',
-        'نماذج من التحفيز المعنوي والمادي',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '9',
-    text: 'الإدارة الصفية',
-    weight: 5,
-    description: 'الإجراءات اللازمة لتحقيق بيئة صفية آمنة وجاذبة وملائمة لعمليتي التعلم والتعليم...',
-    evaluationCriteria: [
-        'مراعاة الفروق الفردية بين المتعلمين.',
-        'توجيه المتعلمين لتطبيق القوانين والتعليمات الصفية.',
-        'تعزيز الانضباط عند المتعلمين وتنظيم عملية التفاعل والتواصل بينهم.',
-        'تنظيم الطلاب بما يناسب الموقف المدرسي.'
-    ],
-    verificationIndicators: [
-        'كشف المتابعة',
-        'تطبيق إدارة الصف',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '10',
-    text: 'تحليل نتائج المتعلمين وتشخيص مستوياتهم',
-    weight: 10,
-    description: 'تحليل البيانات لتطوير التعلم وتقييم أداء المتعلمين بوضوح...',
-    evaluationCriteria: [
-        'تنويع مصادر التقييم: لضمان شمولية النتائج وتقليل التحيز.',
-        'تطوير أهداف تعليمية: قصيرة وطويلة المدى تراعي الفروق الفردية وبيئة التعلم.',
-        'تفسير البيانات: لاتخاذ قرارات مستنيرة بشأن فعالية التدريس والمناهج.',
-        'قياس التطبيق العملي للمعرفة: عبر مواقف ومشاريع حقيقية.',
-        'تحليل الأداء العام: لتحديد نقاط القوة والضعف، مع إشراك المتعلمين في فهم نتائجهم وتقديم ملاحظات تدعم التطور المستمر.'
-    ],
-    verificationIndicators: [
-        'تقرير تحليل نتائج الطلاب',
-        'سجل معالجة الفاقد التعليمي',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  },
-  {
-    id: '11',
-    text: 'تنوع أساليب التقويم',
-    weight: 10,
-    description: 'استخدام مجموعة متنوعة من الطرق لتقييم التقدم والإنجازات الأكاديمية...',
-    evaluationCriteria: [
-        'معرفة وفهم أساليب وأدوات التقويم المتنوعة.',
-        'معرفة وفهم خصائص نمو المتعلمين وأساليب تعلمهم.',
-        'استخدام مصادر متنوعة للتقييم مثل الملاحظة الصفية، الاستبانات، التقارير الذاتية، تحليل نتائج المتعلمين.',
-        'توظيف أساليب تقويم متنوعة على أن يكون من ضمنها الاختبارات (شفهية، تحريرية) والمهمات الأدائية التي تتناسب مع طبيعة الأهداف ومخرجات التعلم.',
-        'مراعاة الفروق الفردية بين المتعلمين أثناء التقويم وتقديم التغذية الراجعة لرفع مستوى التحصيل الدراسي.',
-        'الاستفادة من نتائج تنوع أساليب وأدوات التقويم بتوظيفها في تحسين مستوى الأداء بصفة مستمرة.',
-        'استخدام التقويم القبلي (التشخيصي) للوقوف على مدى استعداد المتعلمين وتشخيص امتلاكهم لمهارات وخبرات أساسية سابقة.',
-        'تطبيق التقويم التكويني والختامي لمعرفة مدى تحقق أهداف العملية التعليمية وقياس تقدم التعلم.'
-    ],
-    verificationIndicators: [
-        'نماذج من الاختبارات',
-        'نماذج من ملفات انجاز الطلاب',
-        'نماذج من المهام الادائية ومشاريع الطلاب',
-        'ملاحظة الأداء'
-    ],
-    rubric: {}
-  }
-];
 
 interface EvaluationFlowProps {
   teacherId: string;
@@ -231,48 +15,92 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
   const [currentIndicatorIndex, setCurrentIndicatorIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   // Data State
   const [period, setPeriod] = useState({ name: '', date: new Date().toISOString().split('T')[0] });
   const [scores, setScores] = useState<Record<string, EvaluationScore>>({});
   const [generalNotes, setGeneralNotes] = useState('');
+  const [teacherName, setTeacherName] = useState('');
+  const [indicators, setIndicators] = useState<EvaluationIndicator[]>([]);
 
-  // Fetch Data from Supabase
+  // Fetch Data from Supabase (Indicators + Teacher + Existing Evaluation)
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchAllData = async () => {
       setIsLoading(true);
+      setErrorMsg(null);
       try {
-        const { data, error } = await supabase
+        // 1. Fetch Teacher Info
+        const { data: teacherData, error: teacherError } = await supabase.from('teachers').select('name').eq('id', teacherId).single();
+        if (teacherError) throw new Error(`خطأ في جلب بيانات المعلم: ${teacherError.message}`);
+        if (teacherData) setTeacherName(teacherData.name);
+
+        // 2. Fetch Indicators Structure
+        // We fetch indicators, and join criteria and verification indicators
+        const { data: indData, error: indError } = await supabase
+          .from('evaluation_indicators')
+          .select(`
+            *,
+            evaluation_criteria (text),
+            verification_indicators (text)
+          `)
+          .order('sort_order', { ascending: true });
+
+        if (indError) {
+             console.error('Indicators fetch error:', indError);
+             throw new Error(`خطأ في جلب المؤشرات: ${indError.message}`);
+        }
+
+        const mappedIndicators: EvaluationIndicator[] = (indData || []).map((ind: any) => ({
+            id: ind.id,
+            text: ind.text,
+            weight: ind.weight,
+            description: ind.description,
+            evaluationCriteria: ind.evaluation_criteria?.map((c: any) => c.text) || [],
+            verificationIndicators: ind.verification_indicators?.map((v: any) => v.text) || [],
+            rubric: {} // Placeholder if rubric is not in DB yet
+        }));
+        setIndicators(mappedIndicators);
+
+        // 3. Fetch Existing Evaluation
+        const { data: evalData, error: evalError } = await supabase
           .from('evaluations')
           .select('*')
           .eq('teacher_id', teacherId)
           .single();
 
-        if (error && error.code !== 'PGRST116') { // PGRST116 is "Row not found"
-             console.error('Error fetching data:', error);
+        // ignore PGRST116 (no rows found) as it just means no previous evaluation
+        if (evalError && evalError.code !== 'PGRST116') {
+             console.warn('Evaluation fetch warning:', evalError);
         }
 
-        if (data) {
-          setPeriod({ name: data.period_name || '', date: data.eval_date || new Date().toISOString().split('T')[0] });
-          setScores(data.scores || {});
-          setGeneralNotes(data.general_notes || '');
-          if (Object.keys(data.scores || {}).length > 0) {
+        if (evalData) {
+          setPeriod({ name: evalData.period_name || '', date: evalData.eval_date || new Date().toISOString().split('T')[0] });
+          setScores(evalData.scores || {});
+          setGeneralNotes(evalData.general_notes || '');
+          if (Object.keys(evalData.scores || {}).length > 0) {
              setStep('scoring');
           }
         }
-      } catch (error) {
-        console.error('Connection error:', error);
+      } catch (error: any) {
+        console.error('Connection error details:', error);
+        let msg = 'حدث خطأ غير متوقع';
+        if (typeof error === 'string') msg = error;
+        else if (error?.message) msg = error.message;
+        else if (error?.error_description) msg = error.error_description;
+        
+        setErrorMsg(msg);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchData();
+    fetchAllData();
   }, [teacherId]);
 
   // Auto-Save to Supabase with Debounce
   useEffect(() => {
-    if (isLoading) return; // Don't save while initial load
+    if (isLoading || indicators.length === 0) return; 
 
     const saveData = async () => {
       setSaveStatus('saving');
@@ -283,12 +111,13 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
             eval_date: period.date,
             scores: scores,
             general_notes: generalNotes,
-            status: 'draft' // Or calculate based on completion
+            total_score: calculateTotal(),
+            status: Object.keys(scores).length === indicators.length ? 'completed' : 'draft'
         };
 
         const { error } = await supabase
             .from('evaluations')
-            .upsert(payload, { onConflict: 'teacher_id' }); // Upsert based on unique teacher_id
+            .upsert(payload, { onConflict: 'teacher_id' }); 
 
         if (error) throw error;
         setSaveStatus('saved');
@@ -299,22 +128,46 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
     };
 
     const timeoutId = setTimeout(() => {
-        if (period.name) { // Only save if at least period is started
+        if (period.name) { 
              saveData();
         }
-    }, 1500); // Save after 1.5 seconds of inactivity
+    }, 1500); 
 
     return () => clearTimeout(timeoutId);
-  }, [period, scores, generalNotes, teacherId, isLoading]);
+  }, [period, scores, generalNotes, teacherId, isLoading, indicators]);
 
 
   // Helpers
-  const currentIndicator = INDICATORS[currentIndicatorIndex];
-  const currentScore = scores[currentIndicator.id] || { 
-    indicatorId: currentIndicator.id, 
+  const currentIndicator = indicators[currentIndicatorIndex];
+  
+  if (errorMsg) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 p-8">
+            <AlertCircle className="text-red-500 mb-4" size={48} />
+            <h3 className="text-xl font-bold text-gray-800 mb-2">خطأ في الاتصال</h3>
+            <p className="text-gray-600 text-center mb-4 max-w-lg dir-ltr">{errorMsg}</p>
+            <button onClick={onBack} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">عودة</button>
+        </div>
+      );
+  }
+
+  // Guard clause if indicators haven't loaded
+  if (!currentIndicator && !isLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 p-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+            <AlertCircle className="text-yellow-500 mb-4" size={48} />
+            <h3 className="text-xl font-bold text-gray-800 mb-2">لا توجد مؤشرات تقييم</h3>
+            <p className="text-gray-500 text-center max-w-md">لم يتم العثور على مؤشرات تقييم في قاعدة البيانات. يرجى التأكد من تشغيل ملف schema.sql في Supabase.</p>
+            <button onClick={onBack} className="mt-6 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">عودة</button>
+        </div>
+      );
+  }
+
+  const currentScore = (currentIndicator && scores[currentIndicator.id]) || { 
+    indicatorId: currentIndicator?.id || '', 
     level: 0,
     score: 0, 
-    subScores: new Array(currentIndicator.evaluationCriteria.length).fill(undefined),
+    subScores: new Array(currentIndicator?.evaluationCriteria.length || 0).fill(undefined),
     evidence: '', 
     notes: '', 
     improvement: '', 
@@ -353,6 +206,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
   };
 
   const updateSubScore = (index: number, valueStr: string) => {
+    if (!currentIndicator) return;
     const val = parseFloat(valueStr);
     const maxVal = currentIndicator.weight;
 
@@ -384,6 +238,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
   };
 
   const updateField = (field: keyof EvaluationScore, value: any) => {
+    if (!currentIndicator) return;
     setScores({
       ...scores,
       [currentIndicator.id]: {
@@ -409,11 +264,11 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
   // Render logic
   if (step === 'print') {
      return <PrintView 
-        teacherName="محمد عبدالله الشمري" // Mock
+        teacherName={teacherName} 
         periodDate={period.date}
         totalScore={calculateTotal()}
         scores={scores}
-        indicators={INDICATORS}
+        indicators={indicators}
         onBack={() => setStep('summary')}
      />
   }
@@ -425,16 +280,17 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
         <div>
            <div className="flex items-center gap-2 mb-2">
              <button onClick={onBack} className="text-gray-400 hover:text-gray-700"><ArrowRight size={20} /></button>
-             <h2 className="text-xl font-bold text-gray-800">تقييم المعلم: محمد عبدالله الشمري</h2>
+             <h2 className="text-xl font-bold text-gray-800">تقييم المعلم: {teacherName}</h2>
            </div>
            <div className="flex gap-4 text-sm text-gray-500 mr-7">
-              <span>التخصص: لغة عربية</span>
-              <span>المدرسة: مدرسة الرياض النموذجية</span>
+              <span>التاريخ: {period.date}</span>
            </div>
         </div>
         <div className="flex flex-col items-end">
             <span className="text-sm text-gray-500 mb-1">حالة التقييم</span>
-            <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">جاري التقييم</span>
+            <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
+                {Object.keys(scores).length === indicators.length ? 'مكتمل' : 'جاري التقييم'}
+            </span>
             <div className="flex items-center gap-1 mt-2 text-xs">
                  {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ...</span>}
                  {saveStatus === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> تم الحفظ</span>}
@@ -490,10 +346,10 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
             <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-fit">
                 <div className="p-4 bg-gray-50 font-bold border-b text-gray-700 flex justify-between items-center">
                   <span>مؤشرات التقييم</span>
-                  <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{Math.round((Object.keys(scores).length / INDICATORS.length) * 100)}%</span>
+                  <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{Math.round((Object.keys(scores).length / indicators.length) * 100)}%</span>
                 </div>
                 <div className="divide-y divide-gray-100 max-h-[700px] overflow-y-auto">
-                    {INDICATORS.map((ind, idx) => (
+                    {indicators.map((ind, idx) => (
                         <button 
                             key={ind.id}
                             onClick={() => setCurrentIndicatorIndex(idx)}
@@ -503,7 +359,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                                 : 'hover:bg-gray-50 text-gray-600'
                             }`}
                         >
-                            <span className="truncate ml-2">{ind.id}- {ind.text}</span>
+                            <span className="truncate ml-2">{idx + 1}- {ind.text}</span>
                             {scores[ind.id]?.isComplete ? (
                               <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />
                             ) : (
@@ -548,6 +404,11 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
+                            {currentIndicator.evaluationCriteria.length === 0 && (
+                                <tr>
+                                    <td colSpan={6} className="text-center py-6 text-gray-500">لا توجد معايير تفصيلية لهذا المؤشر في قاعدة البيانات</td>
+                                </tr>
+                            )}
                             {currentIndicator.evaluationCriteria.map((criteriaText, idx) => {
                                 const subScore = currentScore.subScores?.[idx];
                                 const isCompleted = subScore !== undefined;
@@ -582,12 +443,16 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                                         {idx === 0 && (
                                             <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-6 py-4 align-top border-r border-gray-100">
                                                 <ul className="space-y-3">
-                                                   {currentIndicator.verificationIndicators.map((v, vIdx) => (
-                                                      <li key={vIdx} className="flex items-start gap-2 text-sm text-gray-600">
-                                                         <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                                                         {v}
-                                                      </li>
-                                                   ))}
+                                                   {currentIndicator.verificationIndicators.length > 0 ? (
+                                                       currentIndicator.verificationIndicators.map((v, vIdx) => (
+                                                          <li key={vIdx} className="flex items-start gap-2 text-sm text-gray-600">
+                                                             <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
+                                                             {v}
+                                                          </li>
+                                                       ))
+                                                   ) : (
+                                                       <li className="text-gray-400 text-xs">لا توجد مؤشرات تحقق</li>
+                                                   )}
                                                 </ul>
                                             </td>
                                         )}
@@ -656,7 +521,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                           السابق
                       </button>
                       
-                      {currentIndicatorIndex < INDICATORS.length - 1 ? (
+                      {currentIndicatorIndex < indicators.length - 1 ? (
                            <button 
                               onClick={() => setCurrentIndicatorIndex(currentIndicatorIndex + 1)}
                               className="flex items-center gap-2 bg-primary-600 text-white px-8 py-2 rounded-lg hover:bg-primary-700 shadow-md hover:shadow-lg transition-all font-medium"
