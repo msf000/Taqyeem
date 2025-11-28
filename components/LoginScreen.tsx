@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserRole, User } from '../types';
-import { Shield, School, GraduationCap, ClipboardCheck, ArrowRight, Mail, Loader2, UserPlus, User as UserIcon, Building } from 'lucide-react';
+import { Shield, School, GraduationCap, ClipboardCheck, ArrowRight, Mail, Loader2, UserPlus, User as UserIcon, Building, Globe } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import RegisterScreen from './RegisterScreen';
 
@@ -238,11 +238,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                         </button>
                     </form>
 
-                    <div className="mt-8 pt-6 border-t border-gray-100">
-                        <p className="text-center text-sm text-gray-500 mb-3">مدير مدرسة جديد؟</p>
+                    <div className="mt-8 pt-6 border-t border-gray-100 text-center">
                         <button 
                             onClick={() => setIsRegistering(true)}
-                            className="w-full border border-primary-200 text-primary-700 bg-primary-50 py-3 rounded-lg font-bold hover:bg-primary-100 transition-colors flex justify-center items-center gap-2"
+                            className="w-full mb-3 border border-primary-200 text-primary-700 bg-primary-50 py-3 rounded-lg font-bold hover:bg-primary-100 transition-colors flex justify-center items-center gap-2"
                         >
                             <UserPlus size={18} /> تسجيل مدرسة جديدة
                         </button>

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { supabase } from '../supabaseClient';
-import { Loader2, Filter, Calendar, School as SchoolIcon, Users, CheckCircle2, Clock, BarChart2 } from 'lucide-react';
+import { Loader2, Filter, Calendar, School as SchoolIcon, Users, CheckCircle2, Clock, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 import { UserRole, School } from '../types';
 
 const COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ef4444'];
@@ -204,7 +204,7 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
           
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               {/* School Filter (Admin Only) */}
-              {userRole === UserRole.ADMIN && (
+              {(userRole === UserRole.ADMIN) && (
                   <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
                       <SchoolIcon size={18} className="text-gray-400 shrink-0" />
                       <span className="text-sm text-gray-500 font-medium whitespace-nowrap hidden sm:inline">المدرسة:</span>
@@ -339,7 +339,7 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
                             </ResponsiveContainer>
                         ) : (
                             <div className="h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg">
-                                <PieChart size={40} className="mb-2 opacity-50" />
+                                <PieChartIcon size={40} className="mb-2 opacity-50" />
                                 <p>لا توجد تقييمات لعرض التوزيع</p>
                             </div>
                         )}

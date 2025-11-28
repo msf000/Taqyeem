@@ -110,18 +110,20 @@ export default function IndicatorsManagement() {
     setIsEditing(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا المؤشر؟ سيتم حذف جميع المعايير المرتبطة به.')) return;
+  const handleDelete = async (id: string): Promise<boolean> => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا المؤشر؟ سيتم حذف جميع المعايير المرتبطة به.')) return false;
 
     try {
       const { error } = await supabase.from('evaluation_indicators').delete().eq('id', id);
       if (error) throw error;
       
       setIndicators(indicators.filter(i => i.id !== id));
+      return true;
     } catch (error: any) {
       console.error('Error deleting:', error);
       const msg = error?.message || error?.error_description || (typeof error === 'string' ? error : JSON.stringify(error));
       alert('حدث خطأ أثناء الحذف: ' + msg);
+      return false;
     }
   };
 
@@ -423,16 +425,31 @@ export default function IndicatorsManagement() {
                   </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-                  <button onClick={() => setIsEditing(false)} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-white">إلغاء</button>
-                  <button 
-                      onClick={handleSave} 
-                      disabled={isSaving}
-                      className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 disabled:opacity-50"
-                  >
-                      {isSaving && <Loader2 className="animate-spin" size={16} />}
-                      حفظ التغييرات
-                  </button>
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-between items-center gap-3">
+                  <div className="flex-1">
+                      {formData.id && (
+                          <button 
+                              onClick={async () => {
+                                  const success = await handleDelete(formData.id!);
+                                  if (success) setIsEditing(false);
+                              }}
+                              className="px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-2 text-sm"
+                          >
+                              <Trash2 size={16} /> حذف المؤشر
+                          </button>
+                      )}
+                  </div>
+                  <div className="flex gap-2">
+                      <button onClick={() => setIsEditing(false)} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-white">إلغاء</button>
+                      <button 
+                          onClick={handleSave} 
+                          disabled={isSaving}
+                          className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 disabled:opacity-50"
+                      >
+                          {isSaving && <Loader2 className="animate-spin" size={16} />}
+                          حفظ التغييرات
+                      </button>
+                  </div>
               </div>
           </div>
       );

@@ -158,15 +158,42 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDeleteTeacher = async (id: string) => {
-      if (!window.confirm("هل أنت متأكد من حذف هذا المعلم؟ سيتم حذف جميع تقييماته المرتبطة.")) return;
+  const handleDeleteTeacher = async (id: string): Promise<boolean> => {
+      if (!window.confirm("هل أنت متأكد من حذف هذا المعلم؟ سيتم حذف جميع تقييماته المرتبطة ولن يمكن التراجع عن هذا الإجراء.")) return false;
 
+      setIsLoading(true);
       try {
+          // 1. Manually delete evaluations first to prevent FK constraint errors
+          const { error: evalError } = await supabase.from('evaluations').delete().eq('teacher_id', id);
+          if (evalError) {
+              console.warn('Warning deleting evaluations:', evalError);
+              // Do not throw, try to delete teacher anyway if the user has correct permissions
+              // If CASCADE is set on DB, this manual step is redundant but safe.
+          }
+
+          // 2. Delete the teacher
           const { error } = await supabase.from('teachers').delete().eq('id', id);
           if (error) throw error;
+          
           setTeachers(teachers.filter(t => t.id !== id));
+          if (viewTeacher?.id === id) setViewTeacher(null);
+          
+          alert('تم حذف المعلم وجميع تقييماته بنجاح.');
+          return true;
+          
       } catch (error) {
-          alert('حدث خطأ أثناء الحذف: ' + getErrorMessage(error));
+          console.error(error);
+          let msg = getErrorMessage(error);
+          
+          // Add helpful hint if it's a constraint error
+          if (msg.includes('foreign key constraint')) {
+              msg = `لا يمكن حذف المعلم لوجود سجلات مرتبطة به (تقييمات). \n\nيرجى الذهاب إلى الإعدادات > قاعدة البيانات، وتشغيل كود "إصلاح القيود" لحل هذه المشكلة بشكل نهائي.`;
+          }
+          
+          alert('حدث خطأ أثناء الحذف:\n' + msg);
+          return false;
+      } finally {
+          setIsLoading(false);
       }
   };
 
@@ -612,9 +639,31 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label><input type="tel" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-left" dir="ltr" value={newTeacher.mobile || ''} onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})} /></div>
             </div>
-            <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <button onClick={handleCancelEdit} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">إلغاء</button>
-                <button onClick={handleSaveTeacher} disabled={isSaving} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">{isSaving && <Loader2 className="animate-spin" size={16} />}{editingId ? 'حفظ التعديلات' : 'حفظ المعلم'}</button>
+            
+            {/* Footer Buttons including Delete */}
+            <div className="mt-8 flex flex-col-reverse sm:flex-row justify-between gap-3 pt-4 border-t border-gray-100">
+                <div className="w-full sm:w-auto">
+                    {editingId && (
+                        <button 
+                            onClick={async () => {
+                                const success = await handleDeleteTeacher(editingId);
+                                if (success) {
+                                    setSubTab('list');
+                                    setEditingId(null);
+                                    setNewTeacher({ category: TeacherCategory.TEACHER });
+                                }
+                            }} 
+                            className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <Trash2 size={18} /> حذف المعلم
+                        </button>
+                    )}
+                </div>
+                
+                <div className="flex gap-3 w-full sm:w-auto justify-end">
+                    <button onClick={handleCancelEdit} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">إلغاء</button>
+                    <button onClick={handleSaveTeacher} disabled={isSaving} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">{isSaving && <Loader2 className="animate-spin" size={16} />}{editingId ? 'حفظ التعديلات' : 'حفظ المعلم'}</button>
+                </div>
             </div>
          </div>
       )}

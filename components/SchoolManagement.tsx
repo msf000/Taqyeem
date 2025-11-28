@@ -144,21 +144,53 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
     }
   };
 
-  const handleDeleteSchool = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه المدرسة؟')) return;
+  const handleDeleteSchool = async (id: string): Promise<boolean> => {
+    if (!window.confirm('هل أنت متأكد تماماً من حذف هذه المدرسة؟ سيؤدي هذا الإجراء إلى حذف جميع البيانات المرتبطة بها (معلمين، تقييمات، اشتراكات).')) return false;
 
     try {
+      // Attempt delete first
       const { error } = await supabase.from('schools').delete().eq('id', id);
-      if (error) throw error;
+      
+      if (error) {
+          // Check for foreign key constraint error (Postgres code 23503)
+          if (error.code === '23503') {
+              if (window.confirm('لا يمكن حذف المدرسة لأنها مرتبطة بسجلات أخرى (معلمين، مستخدمين، تقييمات). هل ترغب في فك ارتباط هذه السجلات وحذف المدرسة؟')) {
+                   // Clean up logic manually just in case DB cascade is not set up
+                   
+                   // 1. Unlink Teachers (Set school_id to null)
+                   await supabase.from('teachers').update({ school_id: null }).eq('school_id', id);
+                   
+                   // 2. Unlink Users (Set school_id to null)
+                   await supabase.from('app_users').update({ school_id: null }).eq('school_id', id);
+                   
+                   // 3. Unlink Evaluations (Set school_id to null)
+                   await supabase.from('evaluations').update({ school_id: null }).eq('school_id', id);
+
+                   // 4. Delete Subscriptions (Cascade usually works, but safe to delete)
+                   await supabase.from('subscriptions').delete().eq('school_id', id);
+
+                   // 5. Retry Delete School
+                   const { error: retryError } = await supabase.from('schools').delete().eq('id', id);
+                   if (retryError) throw retryError;
+                   
+                   setSchools(schools.filter(s => s.id !== id));
+                   alert('تم حذف المدرسة وفك ارتباط السجلات التابعة لها بنجاح.');
+                   return true;
+              } else {
+                  return false; // User cancelled clean up
+              }
+          }
+          throw error; // Other error
+      }
+      
+      // Success on first try
       setSchools(schools.filter(s => s.id !== id));
+      alert('تم حذف المدرسة بنجاح.');
+      return true;
     } catch (error: any) {
       console.error('Error deleting school:', error);
-      // Check for foreign key constraint error (Postgres code 23503)
-      if (error?.code === '23503') {
-          alert('لا يمكن حذف المدرسة لأنها مرتبطة بسجلات أخرى (معلمين أو مستخدمين).');
-      } else {
-          alert('حدث خطأ أثناء الحذف: ' + getErrorMessage(error));
-      }
+      alert('حدث خطأ أثناء الحذف: ' + getErrorMessage(error));
+      return false;
     }
   };
 
@@ -259,21 +291,43 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                 />
             </div>
           </div>
-          <div className="mt-6 flex gap-2 justify-end pt-4 border-t border-gray-100">
-             <button 
-              onClick={() => setIsFormOpen(false)} 
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              إلغاء
-            </button>
-            <button 
-              onClick={handleSaveSchool}
-              disabled={isSaving}
-              className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
-            >
-              {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? <CheckSquare size={18}/> : <Plus size={18} />)}
-              {editingId ? 'حفظ التعديلات' : 'إضافة المدرسة'}
-            </button>
+          
+          {/* Footer Buttons including Delete */}
+          <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-100">
+             <div className="w-full sm:w-auto">
+                {editingId && (
+                    <button 
+                        onClick={async () => {
+                            const success = await handleDeleteSchool(editingId);
+                            if (success) {
+                                setIsFormOpen(false);
+                                setEditingId(null);
+                                setFormData({});
+                            }
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Trash2 size={18} /> حذف المدرسة
+                    </button>
+                )}
+             </div>
+             
+             <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <button 
+                  onClick={() => setIsFormOpen(false)} 
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button 
+                  onClick={handleSaveSchool}
+                  disabled={isSaving}
+                  className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? <CheckSquare size={18}/> : <Plus size={18} />)}
+                  {editingId ? 'حفظ التعديلات' : 'إضافة المدرسة'}
+                </button>
+             </div>
           </div>
         </div>
       )}

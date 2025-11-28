@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole, SystemUser, Subscription, School } from '../types';
 
@@ -8,6 +8,11 @@ export default function SystemSettings() {
   const [activeTab, setActiveTab] = useState<'users' | 'subscriptions' | 'database'>('users');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Backup & Restore State
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Data State
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
@@ -51,23 +56,41 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script
+  // SQL Script - Updated with DROP POLICY to fix "already exists" error
   const fullSchemaScript = `
 -- ==========================================
--- 1. أوامر التحديث (Migrations) - ابدأ بهذا القسم
--- ==========================================
--- لإصلاح الأعمدة الناقصة في الجداول الموجودة سابقاً
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS school_id uuid references schools(id) on delete set null;
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_text text;
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default 'none';
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text; -- كلمة مرور المعلم
-
--- ==========================================
--- 2. إنشاء الجداول الأساسية (إذا لم تكن موجودة)
+-- 1. إصلاح مشاكل الحذف (Constraints Fixes)
 -- ==========================================
 
--- جدول المدارس
+-- إصلاح علاقة التقييمات بالمعلمين (حذف التقييم عند حذف المعلم)
+ALTER TABLE evaluations DROP CONSTRAINT IF EXISTS evaluations_teacher_id_fkey;
+ALTER TABLE evaluations ADD CONSTRAINT evaluations_teacher_id_fkey 
+    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE;
+
+-- إصلاح علاقة التقييمات بالمدرسة
+ALTER TABLE evaluations DROP CONSTRAINT IF EXISTS evaluations_school_id_fkey;
+ALTER TABLE evaluations ADD CONSTRAINT evaluations_school_id_fkey 
+    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
+
+-- إصلاح علاقة المعلمين بالمدرسة
+ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_school_id_fkey;
+ALTER TABLE teachers ADD CONSTRAINT teachers_school_id_fkey 
+    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
+
+-- إصلاح علاقة المستخدمين بالمدرسة
+ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_school_id_fkey;
+ALTER TABLE app_users ADD CONSTRAINT app_users_school_id_fkey 
+    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
+
+-- إصلاح علاقة الاشتراكات بالمدرسة
+ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_school_id_fkey;
+ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_school_id_fkey 
+    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
+
+-- ==========================================
+-- 2. التأكد من هيكلية الجداول
+-- ==========================================
+
 create table if not exists schools (
   id uuid default gen_random_uuid() primary key,
   name text not null,
@@ -79,7 +102,6 @@ create table if not exists schools (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول المعلمين
 create table if not exists teachers (
   id uuid default gen_random_uuid() primary key,
   name text not null,
@@ -92,7 +114,6 @@ create table if not exists teachers (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول مستخدمي النظام (للصلاحيات)
 create table if not exists app_users (
   id uuid default gen_random_uuid() primary key,
   email text unique not null,
@@ -102,7 +123,6 @@ create table if not exists app_users (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول الاشتراكات
 create table if not exists subscriptions (
   id uuid default gen_random_uuid() primary key,
   school_id uuid references schools(id) on delete cascade,
@@ -114,7 +134,6 @@ create table if not exists subscriptions (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول مؤشرات التقييم
 create table if not exists evaluation_indicators (
   id uuid default gen_random_uuid() primary key,
   text text not null,
@@ -127,7 +146,6 @@ create table if not exists evaluation_indicators (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول المعايير الفرعية للمؤشر
 create table if not exists evaluation_criteria (
   id uuid default gen_random_uuid() primary key,
   indicator_id uuid references evaluation_indicators(id) on delete cascade,
@@ -135,7 +153,6 @@ create table if not exists evaluation_criteria (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول شواهد التحقق
 create table if not exists verification_indicators (
   id uuid default gen_random_uuid() primary key,
   indicator_id uuid references evaluation_indicators(id) on delete cascade,
@@ -143,7 +160,6 @@ create table if not exists verification_indicators (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول التقييمات
 create table if not exists evaluations (
   id uuid default gen_random_uuid() primary key,
   teacher_id uuid references teachers(id) on delete cascade,
@@ -161,14 +177,12 @@ create table if not exists evaluations (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول التخصصات
 create table if not exists specialties (
   id uuid default gen_random_uuid() primary key,
   name text unique not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول الأحداث والفترات الزمنية
 create table if not exists school_events (
   id uuid default gen_random_uuid() primary key,
   name text not null,
@@ -180,8 +194,15 @@ create table if not exists school_events (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- اضافة الاعمدة الناقصة ان وجدت
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS school_id uuid references schools(id) on delete set null;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_text text;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default 'none';
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text;
+
 -- ==========================================
--- 3. تفعيل سياسات الأمان (RLS)
+-- 3. تحديث سياسات الأمان (RLS) - مع الحذف أولاً
 -- ==========================================
 
 -- Schools
@@ -257,6 +278,125 @@ create policy "Public Access" on evaluations for all using (true);
     }
   };
 
+  // --- Backup & Restore Handlers ---
+  const handleExportBackup = async () => {
+      setIsBackingUp(true);
+      try {
+          const tables = [
+              'schools',
+              'specialties',
+              'evaluation_indicators',
+              'evaluation_criteria',
+              'verification_indicators',
+              'school_events',
+              'teachers',
+              'app_users',
+              'evaluations',
+              'subscriptions'
+          ];
+          
+          const backupData: any = {
+              timestamp: new Date().toISOString(),
+              version: '1.0',
+              data: {}
+          };
+
+          for (const table of tables) {
+              const { data, error } = await supabase.from(table).select('*');
+              if (error) {
+                  // Ignore missing tables, log warning
+                  console.warn(`Could not backup table ${table}:`, error.message);
+                  continue;
+              }
+              backupData.data[table] = data || [];
+          }
+
+          // Trigger Download
+          const jsonString = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([jsonString], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `nizam_taqyeem_backup_${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          alert('تم تصدير النسخة الاحتياطية بنجاح.');
+      } catch (error) {
+          console.error(error);
+          alert('حدث خطأ أثناء النسخ الاحتياطي: ' + getErrorMessage(error));
+      } finally {
+          setIsBackingUp(false);
+      }
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (!window.confirm('تنبيه: استعادة البيانات ستقوم بتحديث البيانات الموجودة أو إضافة بيانات جديدة. هل أنت متأكد من المتابعة؟')) {
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+      }
+
+      setIsRestoring(true);
+      const reader = new FileReader();
+      
+      reader.onload = async (event) => {
+          try {
+              const jsonContent = event.target?.result as string;
+              const backup = JSON.parse(jsonContent);
+
+              if (!backup.data || typeof backup.data !== 'object') {
+                  throw new Error('ملف النسخ الاحتياطي غير صالح');
+              }
+
+              // Order is crucial for Foreign Keys
+              // Parents first, then children
+              const tablesOrder = [
+                  'schools',
+                  'specialties',
+                  'evaluation_indicators', // Parents of criteria
+                  'evaluation_criteria',
+                  'verification_indicators',
+                  'school_events',
+                  'teachers', // Depends on schools
+                  'app_users', // Depends on schools
+                  'evaluations', // Depends on teachers & schools
+                  'subscriptions' // Depends on schools
+              ];
+
+              for (const table of tablesOrder) {
+                  const rows = backup.data[table];
+                  if (rows && Array.isArray(rows) && rows.length > 0) {
+                      const { error } = await supabase.from(table).upsert(rows);
+                      if (error) {
+                          console.error(`Error restoring ${table}:`, error);
+                          throw new Error(`فشل استعادة جدول ${table}: ${error.message}`);
+                      }
+                  }
+              }
+
+              alert('تم استعادة البيانات بنجاح!');
+              // Refresh current view
+              fetchSchools();
+              if (activeTab === 'users') fetchUsers();
+              if (activeTab === 'subscriptions') fetchSubscriptions();
+
+          } catch (error) {
+              console.error(error);
+              alert('فشل استعادة البيانات: ' + getErrorMessage(error));
+          } finally {
+              setIsRestoring(false);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+
+      reader.readAsText(file);
+  };
+
   // --- User Handlers ---
   const handleEditUser = (user: SystemUser) => {
       setNewUser({
@@ -297,14 +437,24 @@ create policy "Public Access" on evaluations for all using (true);
     }
   };
 
-  const handleDeleteUser = async (id: string) => {
-    if(!window.confirm('هل أنت متأكد من حذف المستخدم؟')) return;
+  const handleDeleteUser = async (id: string): Promise<boolean> => {
+    if(!window.confirm('هل أنت متأكد تماماً من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.')) return false;
+    
     try {
         const { error } = await supabase.from('app_users').delete().eq('id', id);
-        if(error) throw error;
+        
+        if(error) {
+            throw error;
+        }
+        
         setSystemUsers(prev => prev.filter(u => u.id !== id));
-    } catch (error) {
+        alert('تم حذف المستخدم بنجاح.');
+        return true;
+        
+    } catch (error: any) {
         console.error(error);
+        alert('فشل عملية الحذف: ' + getErrorMessage(error));
+        return false;
     }
   };
 
@@ -357,14 +507,19 @@ create policy "Public Access" on evaluations for all using (true);
       }
   };
 
-  const handleDeleteSubscription = async (id: string) => {
-      if(!window.confirm('هل أنت متأكد من إلغاء الاشتراك؟')) return;
+  const handleDeleteSubscription = async (id: string): Promise<boolean> => {
+      if(!window.confirm('هل أنت متأكد من إلغاء وحذف هذا الاشتراك؟')) return false;
       try {
           const { error } = await supabase.from('subscriptions').delete().eq('id', id);
           if(error) throw error;
+          
           setSubscriptions(prev => prev.filter(s => s.id !== id));
+          alert('تم حذف الاشتراك بنجاح.');
+          return true;
       } catch(error) {
           console.error(error);
+          alert('فشل عملية الحذف: ' + getErrorMessage(error));
+          return false;
       }
   };
 
@@ -466,11 +621,30 @@ create policy "Public Access" on evaluations for all using (true);
                                 </select>
                             </div>
                         </div>
-                        <div className="mt-4 flex justify-end gap-2 border-t pt-4 border-gray-100">
-                            <button onClick={() => setIsAddingUser(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
-                            <button onClick={handleSaveUser} className="bg-primary-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-primary-700 shadow-sm">
-                                {editingUserId ? 'تحديث البيانات' : 'حفظ المستخدم'}
-                            </button>
+                        <div className="mt-4 flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-100">
+                            <div className="w-full sm:w-auto">
+                                {editingUserId && (
+                                    <button 
+                                        onClick={async () => {
+                                            const success = await handleDeleteUser(editingUserId);
+                                            if(success) {
+                                                setIsAddingUser(false);
+                                                setEditingUserId(null);
+                                                setNewUser({ role: UserRole.TEACHER });
+                                            }
+                                        }}
+                                        className="w-full sm:w-auto text-red-600 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 text-sm flex items-center justify-center gap-2"
+                                    >
+                                        <Trash2 size={16} /> حذف
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex gap-2 w-full sm:w-auto justify-end">
+                                <button onClick={() => setIsAddingUser(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
+                                <button onClick={handleSaveUser} className="bg-primary-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-primary-700 shadow-sm">
+                                    {editingUserId ? 'تحديث البيانات' : 'حفظ المستخدم'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -528,7 +702,7 @@ create policy "Public Access" on evaluations for all using (true);
             </div>
         )}
 
-        {/* ... (Subscriptions and Database tabs unchanged in logic but included in full file) ... */}
+        {/* --- SUBSCRIPTIONS TAB --- */}
         {activeTab === 'subscriptions' && (
             <div className="space-y-6">
                 {/* Stats Cards */}
@@ -623,11 +797,36 @@ create policy "Public Access" on evaluations for all using (true);
                                     />
                                 </div>
                             </div>
-                            <div className="flex justify-end gap-2 border-t pt-4 border-gray-100">
-                                <button onClick={() => setIsAddingSub(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
-                                <button onClick={handleSaveSubscription} className="bg-blue-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-blue-700 shadow-sm">
-                                    {editingSubId ? 'تحديث الاشتراك' : 'تفعيل الاشتراك'}
-                                </button>
+                            <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 border-t pt-4 border-gray-100">
+                                <div className="w-full sm:w-auto">
+                                    {editingSubId && (
+                                        <button 
+                                            onClick={async () => {
+                                                const success = await handleDeleteSubscription(editingSubId);
+                                                if (success) {
+                                                    setIsAddingSub(false);
+                                                    setEditingSubId(null);
+                                                    setNewSub({
+                                                        school_id: '',
+                                                        plan_name: 'Basic',
+                                                        start_date: new Date().toISOString().split('T')[0],
+                                                        end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+                                                        price: 0
+                                                    });
+                                                }
+                                            }}
+                                            className="w-full sm:w-auto text-red-600 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 text-sm flex items-center justify-center gap-2"
+                                        >
+                                            <Trash2 size={16} /> حذف الاشتراك
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex gap-2 w-full sm:w-auto justify-end">
+                                    <button onClick={() => setIsAddingSub(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
+                                    <button onClick={handleSaveSubscription} className="bg-blue-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-blue-700 shadow-sm">
+                                        {editingSubId ? 'تحديث الاشتراك' : 'تفعيل الاشتراك'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -699,40 +898,106 @@ create policy "Public Access" on evaluations for all using (true);
 
         {/* --- DATABASE TAB --- */}
         {activeTab === 'database' && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-start gap-4">
-                <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600">
-                    <Database size={24} />
-                </div>
-                <div className="flex-1">
-                    <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات (Schema)</h2>
-                    <p className="text-gray-500 mb-4 text-sm leading-relaxed">
-                        يحتوي السكربت أدناه على جميع الجداول اللازمة لتشغيل النظام بما في ذلك 
-                        <strong> المستخدمين</strong>، <strong>الاشتراكات</strong>، و <strong>الأحداث</strong>.
-                    </p>
-                    
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                        <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm">
-                            <AlertTriangle size={16} /> تنبيه هام
-                        </h4>
-                        <p className="text-xs text-blue-800">
-                            قم بنسخ هذا الكود وتشغيله في محرر SQL في Supabase لضمان عمل جميع خصائص إدارة المستخدمين والاشتراكات بشكل صحيح.
-                        </p>
+            <div className="space-y-6">
+                
+                {/* Backup & Restore Section */}
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex items-start gap-4 mb-6">
+                        <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
+                            <FileJson size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-gray-800 mb-1">النسخ الاحتياطي واستعادة البيانات</h2>
+                            <p className="text-gray-500 text-sm">يمكنك تصدير قاعدة البيانات كملف JSON وحفظه في جهازك، أو استعادة البيانات من ملف سابق.</p>
+                        </div>
                     </div>
 
-                    <div className="relative group">
-                        <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-left text-xs overflow-x-auto font-mono h-96 custom-scrollbar" dir="ltr">
-                            {fullSchemaScript}
-                        </pre>
-                        <button 
-                        onClick={copyToClipboard}
-                        className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-all flex items-center gap-2 text-xs backdrop-blur-sm"
-                        >
-                            {copied ? <Check size={14} /> : <Copy size={14} />}
-                            {copied ? 'تم النسخ' : 'نسخ الكود'}
-                        </button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         {/* Backup Card */}
+                        <div className="border border-gray-200 rounded-xl p-5 hover:border-blue-200 transition-colors bg-gray-50">
+                             <div className="flex items-center gap-2 mb-3 font-bold text-gray-700">
+                                 <Download size={20} className="text-blue-600" />
+                                 تصدير نسخة احتياطية
+                             </div>
+                             <p className="text-xs text-gray-500 mb-4 h-10">
+                                 سيتم تحميل ملف JSON يحتوي على جميع بيانات الجداول (المدارس، المعلمين، التقييمات...).
+                             </p>
+                             <button 
+                                onClick={handleExportBackup}
+                                disabled={isBackingUp}
+                                className="w-full bg-white border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 font-bold text-sm flex justify-center items-center gap-2 transition-all"
+                             >
+                                 {isBackingUp ? <Loader2 className="animate-spin" size={16}/> : <Download size={16} />}
+                                 {isBackingUp ? 'جاري التصدير...' : 'تحميل النسخة (JSON)'}
+                             </button>
+                        </div>
+
+                         {/* Restore Card */}
+                        <div className="border border-gray-200 rounded-xl p-5 hover:border-green-200 transition-colors bg-gray-50">
+                             <div className="flex items-center gap-2 mb-3 font-bold text-gray-700">
+                                 <UploadCloud size={20} className="text-green-600" />
+                                 استعادة البيانات
+                             </div>
+                             <p className="text-xs text-gray-500 mb-4 h-10">
+                                 قم برفع ملف JSON لاستعادة البيانات. 
+                                 <span className="text-red-500 font-bold block mt-1">تنبيه: هذا الإجراء قد يضيف بيانات جديدة أو يحدث الموجودة.</span>
+                             </p>
+                             <input 
+                                type="file" 
+                                accept=".json" 
+                                ref={fileInputRef}
+                                className="hidden"
+                                onChange={handleImportBackup}
+                             />
+                             <button 
+                                onClick={() => !isRestoring && fileInputRef.current?.click()}
+                                disabled={isRestoring}
+                                className="w-full bg-white border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-green-50 hover:text-green-700 hover:border-green-200 font-bold text-sm flex justify-center items-center gap-2 transition-all"
+                             >
+                                 {isRestoring ? <Loader2 className="animate-spin" size={16}/> : <UploadCloud size={16} />}
+                                 {isRestoring ? 'جاري الاستعادة...' : 'رفع ملف النسخة'}
+                             </button>
+                        </div>
                     </div>
                 </div>
+
+                {/* Schema Script Section */}
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600">
+                            <Database size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات وإصلاح القيود</h2>
+                            <p className="text-gray-500 mb-4 text-sm leading-relaxed">
+                                يحتوي السكربت أدناه على جميع الجداول اللازمة، بالإضافة إلى 
+                                <strong> أوامر إصلاح علاقات الحذف (Constraints)</strong> لضمان حذف السجلات المرتبطة بشكل تلقائي.
+                            </p>
+                            
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm">
+                                    <AlertTriangle size={16} /> تنبيه هام جداً
+                                </h4>
+                                <p className="text-xs text-blue-800">
+                                    إذا كنت تواجه مشكلة "لا يمكن الحذف" أو خطأ "Policy already exists"، يرجى نسخ هذا الكود بالكامل وتشغيله في محرر SQL في Supabase. 
+                                    سيقوم بإصلاح جميع علاقات الجداول والسياسات.
+                                </p>
+                            </div>
+
+                            <div className="relative group">
+                                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-left text-xs overflow-x-auto font-mono h-96 custom-scrollbar" dir="ltr">
+                                    {fullSchemaScript}
+                                </pre>
+                                <button 
+                                onClick={copyToClipboard}
+                                className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-all flex items-center gap-2 text-xs backdrop-blur-sm"
+                                >
+                                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                                    {copied ? 'تم النسخ' : 'نسخ الكود'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}

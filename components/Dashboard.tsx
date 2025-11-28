@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle } from 'lucide-react';
+import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole } from '../types';
 
@@ -69,7 +69,6 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                 }
             } else {
                 // Normal Admin/Principal Stats
-                // ... (Existing logic for stats)
                 
                 // Schools count
                 const { count: schoolsCount } = await supabase.from('schools').select('*', { count: 'exact', head: true });
@@ -179,7 +178,6 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                             onClick={() => onNavigate('analytics')} 
                         />
                     </div>
-                    {/* ... Rest of Admin Dashboard ... */}
                 </div>
               );
 
@@ -234,7 +232,6 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                                 تم تقييم {stats.completedEvals} من أصل {stats.teachers} معلم
                             </p>
                         </div>
-                        {/* ... Rest of Principal Dashboard ... */}
                     </div>
                 </div>
               );
@@ -265,7 +262,6 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                             onClick={() => {}} 
                         />
                      </div>
-                     {/* ... Rest of Evaluator Dashboard ... */}
                 </div>
               );
 
@@ -314,7 +310,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                     </div>
                 </div>
               );
-              
+
           default:
               return <div>User role not recognized</div>;
       }
