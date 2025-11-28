@@ -1,9 +1,17 @@
+
 import React from 'react';
 import { ArrowRight, Printer } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore } from '../types';
 
 interface PrintViewProps {
   teacherName: string;
+  teacherNationalId: string;
+  teacherSpecialty: string;
+  teacherCategory: string;
+  schoolName: string;
+  ministryId: string;
+  managerName?: string;
+  evaluatorName?: string;
   periodDate: string;
   totalScore: number;
   scores: Record<string, EvaluationScore>;
@@ -11,7 +19,21 @@ interface PrintViewProps {
   onBack: () => void;
 }
 
-export default function PrintView({ teacherName, periodDate, totalScore, scores, indicators, onBack }: PrintViewProps) {
+export default function PrintView({ 
+    teacherName, 
+    teacherNationalId,
+    teacherSpecialty,
+    teacherCategory,
+    schoolName,
+    ministryId,
+    managerName,
+    evaluatorName,
+    periodDate, 
+    totalScore, 
+    scores, 
+    indicators, 
+    onBack 
+}: PrintViewProps) {
   
   const handlePrint = () => {
     window.print();
@@ -49,8 +71,8 @@ export default function PrintView({ teacherName, periodDate, totalScore, scores,
            </div>
            <div className="text-left text-sm space-y-1">
               <p>التاريخ: {periodDate}</p>
-              <p>المدرسة: مدرسة الرياض النموذجية</p>
-              <p>الرمز الوزاري: 123456</p>
+              <p>المدرسة: {schoolName || '________________'}</p>
+              <p>الرمز الوزاري: {ministryId || '________'}</p>
            </div>
         </div>
 
@@ -59,9 +81,9 @@ export default function PrintView({ teacherName, periodDate, totalScore, scores,
            <h3 className="font-bold border-b border-gray-400 mb-2 pb-1">معلومات المعلم</h3>
            <div className="grid grid-cols-2 gap-4 text-sm">
               <p><span className="font-semibold">الاسم:</span> {teacherName}</p>
-              <p><span className="font-semibold">التخصص:</span> لغة عربية</p>
-              <p><span className="font-semibold">المسمى الوظيفي:</span> معلم</p>
-              <p><span className="font-semibold">الرقم الوظيفي:</span> 102938</p>
+              <p><span className="font-semibold">التخصص:</span> {teacherSpecialty}</p>
+              <p><span className="font-semibold">المسمى الوظيفي:</span> {teacherCategory}</p>
+              <p><span className="font-semibold">رقم الهوية:</span> {teacherNationalId}</p>
            </div>
         </div>
 
@@ -105,7 +127,7 @@ export default function PrintView({ teacherName, periodDate, totalScore, scores,
            {indicators.map(ind => (
               <div key={ind.id} className="border border-black p-3 mb-3 break-inside-avoid">
                  <div className="flex justify-between font-bold border-b border-gray-300 pb-2 mb-2 bg-gray-50 print:bg-gray-100 p-1">
-                    <span>{ind.id}. {ind.text}</span>
+                    <span>{ind.text}</span>
                     <div className="flex gap-4">
                        <span className="text-sm font-normal">المستوى: {scores[ind.id]?.level || 0}</span>
                        <span>الدرجة: {scores[ind.id]?.score.toFixed(1) || 0} / {ind.weight}</span>
@@ -140,14 +162,14 @@ export default function PrintView({ teacherName, periodDate, totalScore, scores,
         <div className="mt-12 grid grid-cols-2 gap-20 break-inside-avoid pt-8 border-t-2 border-black">
            <div className="text-center">
               <p className="font-bold mb-8 text-lg">المقيم</p>
-              <p className="mb-3 text-right pr-10">الاسم: ....................................</p>
-              <p className="mb-3 text-right pr-10">التاريخ: .... / .... / ........</p>
+              <p className="mb-3 text-right pr-10 font-bold">الاسم: {evaluatorName || '....................................'}</p>
+              <p className="mb-3 text-right pr-10">التاريخ: {periodDate}</p>
               <p className="text-right pr-10">التوقيع: ....................................</p>
            </div>
            <div className="text-center">
               <p className="font-bold mb-8 text-lg">اعتماد مدير المدرسة</p>
-              <p className="mb-3 text-right pr-10">الاسم: ....................................</p>
-              <p className="mb-3 text-right pr-10">التاريخ: .... / .... / ........</p>
+              <p className="mb-3 text-right pr-10 font-bold">الاسم: {managerName || '....................................'}</p>
+              <p className="mb-3 text-right pr-10">التاريخ: {periodDate}</p>
               <p className="text-right pr-10">التوقيع: ....................................</p>
            </div>
         </div>

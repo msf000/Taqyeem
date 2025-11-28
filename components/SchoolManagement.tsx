@@ -1,25 +1,60 @@
+
 import React, { useState, useEffect } from 'react';
-import { Plus, School as SchoolIcon, Edit2, Trash2, Eye, Settings, Loader2 } from 'lucide-react';
-import { School } from '../types';
+import { Plus, School as SchoolIcon, Edit2, Trash2, Eye, Settings, Loader2, X, CheckSquare, Building } from 'lucide-react';
+import { School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 
-export default function SchoolManagement() {
+interface SchoolManagementProps {
+  userRole?: UserRole;
+  schoolId?: string;
+  userName?: string;
+}
+
+export default function SchoolManagement({ userRole, schoolId, userName }: SchoolManagementProps) {
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState(false);
+  
+  // UI States
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewSchool, setViewSchool] = useState<School | null>(null);
   
   // Form State
-  const [newSchool, setNewSchool] = useState<Partial<School>>({});
+  const [formData, setFormData] = useState<Partial<School>>({});
+
+  // Helper for error messages
+  const getErrorMessage = (error: any): string => {
+    if (!error) return 'حدث خطأ غير معروف';
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message;
+    if (error?.message) return error.message;
+    if (error?.error_description) return error.error_description;
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return 'خطأ غير معروف';
+    }
+  };
 
   // Fetch Schools
   const fetchSchools = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('schools')
-        .select('*')
-        .order('created_at', { ascending: false });
+      let query = supabase.from('schools').select('*').order('created_at', { ascending: false });
+
+      // Filter for Principal
+      if (userRole === UserRole.PRINCIPAL) {
+          if (userName) {
+              // Fetch by manager name to allow multiple schools
+              query = query.eq('manager_name', userName);
+          } else if (schoolId) {
+              // Fallback to ID if name is missing (rare)
+              query = query.eq('id', schoolId);
+          }
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -44,32 +79,66 @@ export default function SchoolManagement() {
 
   useEffect(() => {
     fetchSchools();
-  }, []);
+  }, [userRole, schoolId, userName]);
 
-  const handleAddSchool = async () => {
-    if (!newSchool.name || !newSchool.ministryId) return;
+  const handleOpenAdd = () => {
+      // If Principal, auto-set manager name
+      setFormData(userRole === UserRole.PRINCIPAL ? { managerName: userName } : {});
+      setEditingId(null);
+      setIsFormOpen(true);
+  };
+
+  const handleEditSchool = (school: School) => {
+      setFormData({
+          name: school.name,
+          ministryId: school.ministryId,
+          stage: school.stage,
+          type: school.type,
+          managerName: school.managerName,
+          evaluatorName: school.evaluatorName
+      });
+      setEditingId(school.id);
+      setIsFormOpen(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSaveSchool = async () => {
+    if (!formData.name || !formData.ministryId) {
+        alert("يرجى إدخال اسم المدرسة والرقم الوزاري");
+        return;
+    }
 
     setIsSaving(true);
     try {
+      // Enforce manager name for principals to ensure they own the record
+      const manager = (userRole === UserRole.PRINCIPAL && userName) ? userName : formData.managerName;
+
       const payload = {
-        name: newSchool.name,
-        stage: newSchool.stage,
-        type: newSchool.type,
-        ministry_id: newSchool.ministryId,
-        manager_name: newSchool.managerName,
-        evaluator_name: newSchool.evaluatorName
+        name: formData.name,
+        stage: formData.stage,
+        type: formData.type,
+        ministry_id: formData.ministryId,
+        manager_name: manager,
+        evaluator_name: formData.evaluatorName
       };
 
-      const { error } = await supabase.from('schools').insert([payload]);
-      
-      if (error) throw error;
+      if (editingId) {
+          // Update
+          const { error } = await supabase.from('schools').update(payload).eq('id', editingId);
+          if (error) throw error;
+      } else {
+          // Insert
+          const { error } = await supabase.from('schools').insert([payload]);
+          if (error) throw error;
+      }
 
       await fetchSchools(); // Refresh list
-      setIsAdding(false);
-      setNewSchool({});
-    } catch (error) {
-      console.error('Error adding school:', error);
-      alert('حدث خطأ أثناء حفظ المدرسة');
+      setIsFormOpen(false);
+      setFormData({});
+      setEditingId(null);
+  } catch (error: any) {
+      console.error('Error saving school:', error);
+      alert('حدث خطأ أثناء حفظ المدرسة: ' + getErrorMessage(error));
     } finally {
       setIsSaving(false);
     }
@@ -82,128 +151,240 @@ export default function SchoolManagement() {
       const { error } = await supabase.from('schools').delete().eq('id', id);
       if (error) throw error;
       setSchools(schools.filter(s => s.id !== id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting school:', error);
-      alert('لا يمكن حذف المدرسة، قد تكون مرتبطة بمعلمين');
+      // Check for foreign key constraint error (Postgres code 23503)
+      if (error?.code === '23503') {
+          alert('لا يمكن حذف المدرسة لأنها مرتبطة بسجلات أخرى (معلمين أو مستخدمين).');
+      } else {
+          alert('حدث خطأ أثناء الحذف: ' + getErrorMessage(error));
+      }
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <SchoolIcon className="text-primary-600" />
-          إدارة المدارس
+          {userRole === UserRole.PRINCIPAL ? 'مدارسي' : 'إدارة المدارس'}
         </h2>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"
-        >
-          <Plus size={18} />
-          إضافة مدرسة جديدة
-        </button>
+        
+        {/* Show Add button for Admin AND Principal */}
+        {!isFormOpen && (
+            <button 
+            onClick={handleOpenAdd}
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm transition-all"
+            >
+            <Plus size={18} />
+            {userRole === UserRole.PRINCIPAL ? 'إضافة مدرسة جديدة' : 'إضافة مدرسة'}
+            </button>
+        )}
       </div>
 
-      {isAdding && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
-          <h3 className="font-bold text-lg mb-4">بيانات المدرسة الجديدة</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input 
-              type="text" 
-              placeholder="اسم المدرسة" 
-              className="border p-2 rounded-lg"
-              value={newSchool.name || ''}
-              onChange={e => setNewSchool({...newSchool, name: e.target.value})}
-            />
-            <input 
-              type="text" 
-              placeholder="الرقم الوزاري" 
-              className="border p-2 rounded-lg"
-              value={newSchool.ministryId || ''}
-              onChange={e => setNewSchool({...newSchool, ministryId: e.target.value})}
-            />
-            <select 
-              className="border p-2 rounded-lg"
-              value={newSchool.stage || ''}
-              onChange={e => setNewSchool({...newSchool, stage: e.target.value})}
-            >
-              <option value="">المرحلة التعليمية</option>
-              <option value="الابتدائية">الابتدائية</option>
-              <option value="المتوسطة">المتوسطة</option>
-              <option value="الثانوية">الثانوية</option>
-            </select>
-            <select 
-              className="border p-2 rounded-lg"
-              value={newSchool.type || ''}
-              onChange={e => setNewSchool({...newSchool, type: e.target.value})}
-            >
-              <option value="">النوع</option>
-              <option value="بنين">بنين</option>
-              <option value="بنات">بنات</option>
-            </select>
-            <input 
-              type="text" 
-              placeholder="اسم مدير المدرسة" 
-              className="border p-2 rounded-lg"
-              value={newSchool.managerName || ''}
-              onChange={e => setNewSchool({...newSchool, managerName: e.target.value})}
-            />
-            <input 
-              type="text" 
-              placeholder="اسم مقيم الأداء" 
-              className="border p-2 rounded-lg"
-              value={newSchool.evaluatorName || ''}
-              onChange={e => setNewSchool({...newSchool, evaluatorName: e.target.value})}
-            />
+      {/* Add/Edit Form */}
+      {isFormOpen && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fade-in ring-1 ring-primary-100">
+          <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+              <h3 className="font-bold text-lg text-primary-800">
+                  {editingId ? 'تعديل بيانات المدرسة' : 'بيانات المدرسة الجديدة'}
+              </h3>
+              <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20}/>
+              </button>
           </div>
-          <div className="mt-4 flex gap-2 justify-end">
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم المدرسة <span className="text-red-500">*</span></label>
+                <input 
+                type="text" 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                value={formData.name || ''}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                placeholder="مثال: مدرسة الرياض النموذجية"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">الرقم الوزاري <span className="text-red-500">*</span></label>
+                <input 
+                type="text" 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                value={formData.ministryId || ''}
+                onChange={e => setFormData({...formData, ministryId: e.target.value})}
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">المرحلة التعليمية</label>
+                <select 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                value={formData.stage || ''}
+                onChange={e => setFormData({...formData, stage: e.target.value})}
+                >
+                <option value="">اختر المرحلة</option>
+                <option value="الابتدائية">الابتدائية</option>
+                <option value="المتوسطة">المتوسطة</option>
+                <option value="الثانوية">الثانوية</option>
+                </select>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">نوع المدرسة</label>
+                <select 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                value={formData.type || ''}
+                onChange={e => setFormData({...formData, type: e.target.value})}
+                >
+                <option value="">اختر النوع</option>
+                <option value="بنين">بنين</option>
+                <option value="بنات">بنات</option>
+                </select>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم مدير المدرسة</label>
+                <input 
+                type="text" 
+                className={`w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none ${userRole === UserRole.PRINCIPAL ? 'bg-gray-50 text-gray-500' : ''}`}
+                value={formData.managerName || ''}
+                onChange={e => setFormData({...formData, managerName: e.target.value})}
+                disabled={userRole === UserRole.PRINCIPAL} // Lock for principals
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم مقيم الأداء</label>
+                <input 
+                type="text" 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                value={formData.evaluatorName || ''}
+                onChange={e => setFormData({...formData, evaluatorName: e.target.value})}
+                />
+            </div>
+          </div>
+          <div className="mt-6 flex gap-2 justify-end pt-4 border-t border-gray-100">
              <button 
-              onClick={() => setIsAdding(false)} 
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              onClick={() => setIsFormOpen(false)} 
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               إلغاء
             </button>
             <button 
-              onClick={handleAddSchool}
+              onClick={handleSaveSchool}
               disabled={isSaving}
-              className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
+              className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
             >
-              {isSaving ? <Loader2 className="animate-spin" size={18} /> : null}
-              حفظ المدرسة
+              {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? <CheckSquare size={18}/> : <Plus size={18} />)}
+              {editingId ? 'حفظ التعديلات' : 'إضافة المدرسة'}
             </button>
           </div>
         </div>
       )}
 
+      {/* View Modal */}
+      {viewSchool && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+                  <div className="flex justify-between items-center p-6 border-b">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                          <SchoolIcon className="text-primary-600" /> 
+                          {viewSchool.name}
+                      </h3>
+                      <button onClick={() => setViewSchool(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="text-xs text-gray-500">الرقم الوزاري</label>
+                              <p className="font-medium">{viewSchool.ministryId}</p>
+                          </div>
+                          <div>
+                              <label className="text-xs text-gray-500">المرحلة</label>
+                              <p className="font-medium">{viewSchool.stage}</p>
+                          </div>
+                          <div>
+                              <label className="text-xs text-gray-500">النوع</label>
+                              <p className="font-medium">{viewSchool.type}</p>
+                          </div>
+                          <div>
+                              <label className="text-xs text-gray-500">المدير</label>
+                              <p className="font-medium">{viewSchool.managerName || '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                              <label className="text-xs text-gray-500">المقيم المعتمد</label>
+                              <p className="font-medium bg-gray-50 p-2 rounded">{viewSchool.evaluatorName || '-'}</p>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
+                      <button onClick={() => setViewSchool(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* List */}
       {isLoading ? (
         <div className="flex justify-center p-12">
           <Loader2 className="animate-spin text-primary-600" size={32} />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
-          <h3 className="font-bold text-gray-700 text-lg">مدارسي ({schools.length})</h3>
-          {schools.length === 0 && <p className="text-gray-500">لا توجد مدارس مضافة.</p>}
+          <div className="flex justify-between items-center">
+             <h3 className="font-bold text-gray-700 text-lg">
+                {userRole === UserRole.PRINCIPAL ? `المدارس التابعة لي (${schools.length})` : `المدارس المسجلة (${schools.length})`}
+             </h3>
+          </div>
+          
+          {schools.length === 0 && (
+            <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+                <SchoolIcon size={48} className="mx-auto mb-4 text-gray-300" />
+                <p>لا توجد مدارس متاحة.</p>
+                <button onClick={handleOpenAdd} className="mt-4 text-primary-600 hover:underline">أضف مدرستك الأولى</button>
+            </div>
+          )}
+
           {schools.map(school => (
-            <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-shadow">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
+                  <div className="bg-primary-50 p-2 rounded-lg">
+                      <Building className="text-primary-600" size={20} />
+                  </div>
                   <h4 className="text-xl font-bold text-gray-900">{school.name}</h4>
                   <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{school.stage}</span>
                   <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">{school.ministryId}</span>
                 </div>
-                <div className="flex gap-6 text-sm text-gray-500">
-                  <span>المدير: {school.managerName}</span>
-                  <span>المقيم: {school.evaluatorName}</span>
+                <div className="flex flex-wrap gap-4 text-sm text-gray-500 mr-11">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400"></span> المدير: {school.managerName || 'غير محدد'}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400"></span> المقيم: {school.evaluatorName || 'غير محدد'}</span>
                   <span>النوع: {school.type}</span>
                 </div>
               </div>
               
               <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="flex bg-gray-50 rounded-lg p-1">
-                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="عرض"><Eye size={18} /></button>
-                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="تحرير"><Edit2 size={18} /></button>
-                  <button className="p-2 hover:bg-white hover:shadow rounded-md text-gray-600" title="إعدادات"><Settings size={18} /></button>
-                  <button onClick={() => handleDeleteSchool(school.id)} className="p-2 hover:bg-white hover:shadow rounded-md text-red-600" title="حذف"><Trash2 size={18} /></button>
+                <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-100">
+                  <button 
+                    onClick={() => setViewSchool(school)}
+                    className="p-2 hover:bg-white hover:text-blue-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    title="عرض التفاصيل"
+                  >
+                      <Eye size={18} />
+                  </button>
+                  <button 
+                    onClick={() => handleEditSchool(school)}
+                    className="p-2 hover:bg-white hover:text-green-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    title="تعديل"
+                  >
+                      <Edit2 size={18} />
+                  </button>
+                  
+                  {/* Allow Deletion for Principal if they added it (logic check: if they see the delete button) */}
+                  <div className="w-px bg-gray-200 mx-1"></div>
+                  <button 
+                    onClick={() => handleDeleteSchool(school.id)} 
+                    className="p-2 hover:bg-white hover:text-red-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    title="حذف"
+                  >
+                      <Trash2 size={18} />
+                  </button>
                 </div>
               </div>
             </div>

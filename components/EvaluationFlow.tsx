@@ -1,16 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle } from 'lucide-react';
-import { EvaluationIndicator, EvaluationScore } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar } from 'lucide-react';
+import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
 
 interface EvaluationFlowProps {
   teacherId: string;
+  evaluationId?: string; // Optional: If provided, edits specific evaluation. If not, creates new or finds active.
   onBack: () => void;
 }
 
-export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProps) {
+export default function EvaluationFlow({ teacherId, evaluationId, onBack }: EvaluationFlowProps) {
   const [step, setStep] = useState<'period' | 'scoring' | 'summary' | 'print'>('period');
   const [currentIndicatorIndex, setCurrentIndicatorIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,25 +19,85 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   // Data State
+  const [currentEvalId, setCurrentEvalId] = useState<string | null>(evaluationId || null);
+  // Date is kept internally for DB but not shown/edited by user
   const [period, setPeriod] = useState({ name: '', date: new Date().toISOString().split('T')[0] });
   const [scores, setScores] = useState<Record<string, EvaluationScore>>({});
   const [generalNotes, setGeneralNotes] = useState('');
-  const [teacherName, setTeacherName] = useState('');
+  
+  // Dynamic Events List
+  const [availableEvents, setAvailableEvents] = useState<SchoolEvent[]>([]);
+
+  // Teacher & School Full Details for Printing
+  const [teacherDetails, setTeacherDetails] = useState<{
+      name: string;
+      nationalId: string;
+      specialty: string;
+      category: string;
+      schoolId: string | null;
+      schoolName: string;
+      ministryId: string;
+  }>({
+      name: '', nationalId: '', specialty: '', category: '', schoolId: null, schoolName: '', ministryId: ''
+  });
+
   const [indicators, setIndicators] = useState<EvaluationIndicator[]>([]);
 
-  // Fetch Data from Supabase (Indicators + Teacher + Existing Evaluation)
+  // Robust Helper for error messages
+  const getErrorMessage = (error: any): string => {
+    if (!error) return 'حدث خطأ غير معروف';
+    
+    // Check specific properties first (Supabase/Postgres errors) - Ensure they are strings
+    if (error?.message && typeof error.message === 'string') return error.message;
+    if (error?.error_description && typeof error.error_description === 'string') return error.error_description;
+    if (error?.details && typeof error.details === 'string') return error.details;
+    if (error?.hint && typeof error.hint === 'string') return error.hint;
+    
+    // Standard JS Error
+    if (error instanceof Error) return error.message;
+    
+    // String error
+    if (typeof error === 'string') return error;
+    
+    // Try to stringify if object
+    try {
+        const str = JSON.stringify(error);
+        if (str === '{}' || str === '[]') return 'خطأ غير محدد في النظام';
+        return str;
+    } catch {
+        return 'خطأ غير معروف (تعذر عرض التفاصيل)';
+    }
+  };
+
+  // Fetch Data from Supabase
   useEffect(() => {
     const fetchAllData = async () => {
       setIsLoading(true);
-      setErrorMsg(null);
       try {
-        // 1. Fetch Teacher Info
-        const { data: teacherData, error: teacherError } = await supabase.from('teachers').select('name').eq('id', teacherId).single();
-        if (teacherError) throw new Error(`خطأ في جلب بيانات المعلم: ${teacherError.message}`);
-        if (teacherData) setTeacherName(teacherData.name);
+        // 1. Fetch Teacher Info AND Linked School Info
+        const { data: teacherData, error: teacherError } = await supabase
+            .from('teachers')
+            .select('*, schools(name, ministry_id)') // Fetch school details via relation
+            .eq('id', teacherId)
+            .single();
+        
+        if (teacherError) throw teacherError;
+        
+        if (teacherData) {
+            setTeacherDetails({
+                name: teacherData.name,
+                nationalId: teacherData.national_id,
+                specialty: teacherData.specialty,
+                category: teacherData.category,
+                schoolId: teacherData.school_id || null, // Ensure null if undefined
+                schoolName: teacherData.schools?.name || '',
+                ministryId: teacherData.schools?.ministry_id || ''
+            });
+        }
+
+        const teacherCategory: TeacherCategory = teacherData?.category as TeacherCategory;
 
         // 2. Fetch Indicators Structure
-        // We fetch indicators, and join criteria and verification indicators
         const { data: indData, error: indError } = await supabase
           .from('evaluation_indicators')
           .select(`
@@ -46,35 +107,66 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
           `)
           .order('sort_order', { ascending: true });
 
-        if (indError) {
-             console.error('Indicators fetch error:', indError);
-             throw new Error(`خطأ في جلب المؤشرات: ${indError.message}`);
-        }
+        if (indError) throw indError;
 
-        const mappedIndicators: EvaluationIndicator[] = (indData || []).map((ind: any) => ({
-            id: ind.id,
-            text: ind.text,
-            weight: ind.weight,
-            description: ind.description,
-            evaluationCriteria: ind.evaluation_criteria?.map((c: any) => c.text) || [],
-            verificationIndicators: ind.verification_indicators?.map((v: any) => v.text) || [],
-            rubric: {} // Placeholder if rubric is not in DB yet
-        }));
+        // Map and Filter Indicators based on Category
+        const mappedIndicators: EvaluationIndicator[] = (indData || [])
+            .map((ind: any) => {
+                const categoryWeights = ind.category_weights || {};
+                const specificWeight = categoryWeights[teacherCategory];
+                const finalWeight = specificWeight !== undefined ? specificWeight : ind.weight;
+
+                return {
+                    id: ind.id,
+                    text: ind.text,
+                    weight: finalWeight,
+                    description: ind.description,
+                    evaluationCriteria: ind.evaluation_criteria?.map((c: any) => c.text) || [],
+                    verificationIndicators: ind.verification_indicators?.map((v: any) => v.text) || [],
+                    rubric: ind.rubric || {},
+                    applicableCategories: ind.applicable_categories || [],
+                    categoryWeights: categoryWeights
+                };
+            })
+            .filter((ind: EvaluationIndicator) => {
+                if (!ind.applicableCategories || ind.applicableCategories.length === 0) return true;
+                return teacherCategory && ind.applicableCategories.includes(teacherCategory);
+            });
+
         setIndicators(mappedIndicators);
 
-        // 3. Fetch Existing Evaluation
-        const { data: evalData, error: evalError } = await supabase
-          .from('evaluations')
-          .select('*')
-          .eq('teacher_id', teacherId)
-          .single();
-
-        // ignore PGRST116 (no rows found) as it just means no previous evaluation
-        if (evalError && evalError.code !== 'PGRST116') {
-             console.warn('Evaluation fetch warning:', evalError);
+        // 3. Fetch Active Evaluation Events (Try catch to handle missing table gracefully)
+        try {
+            const { data: eventsData, error: evError } = await supabase
+            .from('school_events')
+            .select('*')
+            .eq('type', 'evaluation')
+            .in('status', ['active', 'upcoming'])
+            .order('start_date', { ascending: true });
+            
+            if (!evError && eventsData) {
+                setAvailableEvents(eventsData);
+            }
+        } catch (e) {
+            // Ignore if table doesn't exist, we fallback to default list
+            console.log('Events table might not exist yet or empty');
         }
 
+        // 4. Fetch Evaluation Data
+        let evalQuery = supabase.from('evaluations').select('*');
+        
+        if (currentEvalId) {
+            // If explicit ID provided (Editing)
+            evalQuery = evalQuery.eq('id', currentEvalId);
+        } else {
+            // Default logic: Find most recent draft or completed for this teacher
+            evalQuery = evalQuery.eq('teacher_id', teacherId).order('created_at', { ascending: false }).limit(1);
+        }
+
+        const { data: evalData } = await evalQuery.single();
+
         if (evalData) {
+          setCurrentEvalId(evalData.id); // Ensure we lock onto this ID
           setPeriod({ name: evalData.period_name || '', date: evalData.eval_date || new Date().toISOString().split('T')[0] });
           setScores(evalData.scores || {});
           setGeneralNotes(evalData.general_notes || '');
@@ -83,98 +175,120 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
           }
         }
       } catch (error: any) {
-        console.error('Connection error details:', error);
-        let msg = 'حدث خطأ غير متوقع';
-        if (typeof error === 'string') msg = error;
-        else if (error?.message) msg = error.message;
-        else if (error?.error_description) msg = error.error_description;
-        
-        setErrorMsg(msg);
+        // If no rows found (PGRST116), it's fine, we start fresh.
+        if (error.code !== 'PGRST116') {
+            console.error('Error fetching data:', error);
+            setErrorMsg(getErrorMessage(error));
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchAllData();
-  }, [teacherId]);
+  }, [teacherId, evaluationId]);
 
-  // Auto-Save to Supabase with Debounce
-  useEffect(() => {
-    if (isLoading || indicators.length === 0) return; 
+  // Centralized Save Function - Returns Success Boolean
+  const saveToDb = useCallback(async (isManual = false): Promise<boolean> => {
+      // Don't save if basic data isn't ready
+      if (!teacherId || !period.name) {
+          if (isManual) alert("يرجى تحديد فترة التقييم قبل الحفظ");
+          return false;
+      }
 
-    const saveData = async () => {
       setSaveStatus('saving');
       try {
-        const payload = {
+        const payload: any = {
             teacher_id: teacherId,
+            school_id: teacherDetails.schoolId || null, 
             period_name: period.name,
-            eval_date: period.date,
+            eval_date: period.date, // We save the internal date
             scores: scores,
             general_notes: generalNotes,
             total_score: calculateTotal(),
-            status: Object.keys(scores).length === indicators.length ? 'completed' : 'draft'
+            status: Object.keys(scores).length === indicators.length && indicators.length > 0 ? 'completed' : 'draft'
         };
 
-        const { error } = await supabase
-            .from('evaluations')
-            .upsert(payload, { onConflict: 'teacher_id' }); 
+        // If we have an ID, update. Else insert.
+        // IMPORTANT: We only select 'id' to avoid "Schema Cache" errors if the table has other columns (like teacher_evidence_links) 
+        // that are not in the local type definition or cache but exist in DB, or vice versa.
+        let query;
+        if (currentEvalId) {
+             query = supabase.from('evaluations').update(payload).eq('id', currentEvalId).select('id');
+        } else {
+             query = supabase.from('evaluations').insert([payload]).select('id');
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
+        
+        if (data && data[0]) {
+            setCurrentEvalId(data[0].id); // Capture new ID if we just inserted
+        }
         setSaveStatus('saved');
-      } catch (error) {
+        return true;
+      } catch (error: any) {
         console.error('Error saving:', error);
         setSaveStatus('error');
+        
+        const msg = getErrorMessage(error);
+        if (isManual) {
+            // Check specifically for missing column error
+            if (msg.includes('column') && msg.includes('does not exist')) {
+                 alert('فشل الحفظ: قاعدة البيانات تحتاج إلى تحديث.\nيرجى الذهاب إلى الإعدادات > قاعدة البيانات، ونسخ كود التحديث وتشغيله في Supabase.');
+            } else {
+                 alert('فشل الحفظ: ' + msg);
+            }
+        }
+        return false;
       }
-    };
+  }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId]);
+
+  // Auto-Save Effect
+  useEffect(() => {
+    if (isLoading || indicators.length === 0) return; 
 
     const timeoutId = setTimeout(() => {
-        if (period.name) { 
-             saveData();
-        }
+        if (period.name) saveToDb(false);
     }, 1500); 
 
     return () => clearTimeout(timeoutId);
-  }, [period, scores, generalNotes, teacherId, isLoading, indicators]);
+  }, [saveToDb, isLoading, indicators.length]);
 
+  const handleStartEvaluation = async () => {
+      if (!period.name) {
+          alert('يرجى اختيار الفترة');
+          return;
+      }
+      // Force initial save to create the record ID
+      const success = await saveToDb(true);
+      if (success) {
+          setStep('scoring');
+      }
+  };
+
+  const handleFinish = async () => {
+      const success = await saveToDb(true);
+      if (success) {
+          onBack();
+      }
+  };
 
   // Helpers
   const currentIndicator = indicators[currentIndicatorIndex];
   
-  if (errorMsg) {
-      return (
-        <div className="flex flex-col items-center justify-center h-96 p-8">
-            <AlertCircle className="text-red-500 mb-4" size={48} />
-            <h3 className="text-xl font-bold text-gray-800 mb-2">خطأ في الاتصال</h3>
-            <p className="text-gray-600 text-center mb-4 max-w-lg dir-ltr">{errorMsg}</p>
-            <button onClick={onBack} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">عودة</button>
-        </div>
-      );
-  }
-
-  // Guard clause if indicators haven't loaded
-  if (!currentIndicator && !isLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-96 p-8 bg-white rounded-xl border border-gray-200 shadow-sm">
-            <AlertCircle className="text-yellow-500 mb-4" size={48} />
-            <h3 className="text-xl font-bold text-gray-800 mb-2">لا توجد مؤشرات تقييم</h3>
-            <p className="text-gray-500 text-center max-w-md">لم يتم العثور على مؤشرات تقييم في قاعدة البيانات. يرجى التأكد من تشغيل ملف schema.sql في Supabase.</p>
-            <button onClick={onBack} className="mt-6 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">عودة</button>
-        </div>
-      );
-  }
-
-  const currentScore = (currentIndicator && scores[currentIndicator.id]) || { 
+  const currentScore: EvaluationScore = (currentIndicator && scores[currentIndicator.id]) || { 
     indicatorId: currentIndicator?.id || '', 
     level: 0,
     score: 0, 
-    subScores: new Array(currentIndicator?.evaluationCriteria.length || 0).fill(undefined),
     evidence: '', 
     notes: '', 
     improvement: '', 
     isComplete: false 
   };
 
-  const getRubricScore = (score: number, max: number) => {
+  const getRubricLevel = (score: number, max: number) => {
     if (score === 0) return 0;
     const percentage = (score / max) * 100;
     if (percentage >= 90) return 5;
@@ -194,41 +308,32 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
     return "غير مجتاز";
   };
 
-  const getAutoImprovementNote = (score: number, max: number) => {
-      if (score === 0) return "";
-      const percentage = (score / max) * 100;
-      
-      if (percentage >= 90) return "الاستمرار في نشر ثقافة التميز والابتكار في هذا المجال.";
-      if (percentage >= 80) return "توثيق المبادرات ونشرها بشكل أوسع لتصبح نماذج مرجعية.";
-      if (percentage >= 70) return "العمل على ابتكار مبادرات نوعية تتجاوز التطبيق الأساسي.";
-      if (percentage >= 50) return "التركيز على الالتزام بتطبيق المعايير الأساسية بشكل منتظم.";
-      return "يحتاج إلى خطة علاجية عاجلة لفهم وتطبيق أساسيات المعيار.";
-  };
-
-  const updateSubScore = (index: number, valueStr: string) => {
+  const updateScore = (valueStr: string) => {
     if (!currentIndicator) return;
-    const val = parseFloat(valueStr);
+    let val = parseFloat(valueStr);
     const maxVal = currentIndicator.weight;
 
-    if (!isNaN(val) && (val < 0 || val > maxVal)) return;
+    if (isNaN(val)) val = 0;
+    if (val < 0) val = 0;
+    if (val > maxVal) val = maxVal;
 
-    const newSubScores = [...(currentScore.subScores || new Array(currentIndicator.evaluationCriteria.length).fill(undefined))];
-    newSubScores[index] = isNaN(val) ? undefined : val;
+    const rubricLevel = getRubricLevel(val, maxVal);
 
-    const definedScores = newSubScores.filter(s => s !== undefined) as number[];
-    const avgScore = definedScores.length > 0 
-        ? definedScores.reduce((a, b) => a + b, 0) / definedScores.length 
-        : 0;
-    
-    const rubricLevel = getRubricScore(avgScore, currentIndicator.weight);
+    // Auto improvement text logic
+    let autoImprovement = "الاستمرار في تحسين الأداء.";
+    const percentage = (val / maxVal) * 100;
+    if (percentage >= 90) autoImprovement = "توثيق المبادرات ونشرها كنموذج يحتذى به.";
+    else if (percentage >= 80) autoImprovement = "العمل على ابتكار مبادرات نوعية تتجاوز التطبيق الأساسي.";
+    else if (percentage >= 70) autoImprovement = "التركيز على الالتزام بتطبيق المعايير الأساسية بشكل منتظم.";
+    else if (percentage >= 50) autoImprovement = "يحتاج إلى خطة علاجية عاجلة لفهم وتطبيق أساسيات المعيار.";
+    else autoImprovement = "أداء غير مرضي يتطلب تدخلاً فورياً.";
 
     const newScore = {
        ...currentScore,
-       subScores: newSubScores,
-       score: avgScore, 
+       score: val, 
        level: rubricLevel,
-       isComplete: newSubScores.every(s => s !== undefined),
-       improvement: getAutoImprovementNote(avgScore, currentIndicator.weight)
+       isComplete: val > 0, // Considered complete if score entered
+       improvement: autoImprovement
     };
     
     setScores({
@@ -248,23 +353,22 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
     });
   };
 
-  const calculateTotal = () => {
-    return Object.values(scores).reduce((acc, curr) => acc + curr.score, 0);
+  const calculateTotal = (): number => {
+    return (Object.values(scores) as EvaluationScore[]).reduce((acc: number, curr: EvaluationScore) => acc + (curr.score || 0), 0);
   };
 
-  if (isLoading) {
-      return (
-          <div className="flex flex-col items-center justify-center h-96">
-              <Loader2 className="animate-spin text-primary-600 mb-4" size={40} />
-              <p className="text-gray-500">جاري تحميل البيانات...</p>
-          </div>
-      );
-  }
+  if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>;
+  if (errorMsg) return <div className="text-red-500 text-center p-12">{errorMsg}</div>;
+  if (!currentIndicator) return <div className="p-12 text-center">لا توجد مؤشرات لهذه الفئة من المعلمين</div>;
 
-  // Render logic
   if (step === 'print') {
      return <PrintView 
-        teacherName={teacherName} 
+        teacherName={teacherDetails.name}
+        teacherNationalId={teacherDetails.nationalId}
+        teacherSpecialty={teacherDetails.specialty}
+        teacherCategory={teacherDetails.category}
+        schoolName={teacherDetails.schoolName}
+        ministryId={teacherDetails.ministryId}
         periodDate={period.date}
         totalScore={calculateTotal()}
         scores={scores}
@@ -273,6 +377,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
      />
   }
 
+  // --- RENDER SCORING TABLE ---
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header Info */}
@@ -280,10 +385,11 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
         <div>
            <div className="flex items-center gap-2 mb-2">
              <button onClick={onBack} className="text-gray-400 hover:text-gray-700"><ArrowRight size={20} /></button>
-             <h2 className="text-xl font-bold text-gray-800">تقييم المعلم: {teacherName}</h2>
+             <h2 className="text-xl font-bold text-gray-800">تقييم المعلم: {teacherDetails.name}</h2>
            </div>
            <div className="flex gap-4 text-sm text-gray-500 mr-7">
-              <span>التاريخ: {period.date}</span>
+              {period.name && <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">الفترة: {period.name}</span>}
+              <span>المدرسة: {teacherDetails.schoolName || 'غير محدد'}</span>
            </div>
         </div>
         <div className="flex flex-col items-end">
@@ -294,55 +400,67 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
             <div className="flex items-center gap-1 mt-2 text-xs">
                  {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ...</span>}
                  {saveStatus === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> تم الحفظ</span>}
-                 {saveStatus === 'error' && <span className="text-red-500">فشل الحفظ</span>}
+                 {saveStatus === 'error' && <span className="text-red-500 flex items-center gap-1"><AlertCircle size={10} /> خطأ في الحفظ</span>}
             </div>
         </div>
       </div>
 
-      {/* Step 1: Period Definition */}
       {step === 'period' && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
-           <h3 className="text-lg font-bold mb-6 border-b pb-4">أولاً: تحديد فترة التقييم</h3>
+           <h3 className="text-lg font-bold mb-6 border-b pb-4 flex items-center gap-2">
+             <Calendar className="text-primary-600" /> أولاً: تحديد فترة التقييم
+           </h3>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div>
                  <label className="block text-sm font-medium mb-2">اسم فترة التقييم</label>
                  <select 
-                    className="w-full border p-2.5 rounded-lg"
+                    className="w-full border p-2.5 rounded-lg bg-white"
                     value={period.name}
-                    onChange={(e) => setPeriod({...period, name: e.target.value})}
+                    onChange={(e) => {
+                        const newName = e.target.value;
+                        // Auto-set internal date based on selected event if possible, or keep current
+                        // We rely on "Today" for the eval_date unless we want to backdate to event start
+                        setPeriod({...period, name: newName });
+                    }}
                  >
                     <option value="">اختر الفترة</option>
-                    <option value="الربع الأول">الربع الأول</option>
-                    <option value="الربع الثاني">الربع الثاني</option>
-                    <option value="نهاية العام">نهاية العام</option>
+                    {availableEvents.length > 0 ? (
+                        availableEvents.map(evt => (
+                            <option key={evt.id} value={evt.name}>
+                                {evt.name} ({new Date(evt.start_date).toLocaleDateString('ar-SA')})
+                            </option>
+                        ))
+                    ) : (
+                        <>
+                            <option value="الربع الأول">الربع الأول</option>
+                            <option value="الربع الثاني">الربع الثاني</option>
+                            <option value="الربع الثالث">الربع الثالث</option>
+                            <option value="نهاية العام">نهاية العام</option>
+                        </>
+                    )}
                  </select>
-              </div>
-              <div>
-                 <label className="block text-sm font-medium mb-2">تاريخ التقييم</label>
-                 <input 
-                    type="date" 
-                    className="w-full border p-2.5 rounded-lg"
-                    value={period.date}
-                    onChange={(e) => setPeriod({...period, date: e.target.value})}
-                 />
+                 {availableEvents.length === 0 && (
+                     <p className="text-xs text-gray-400 mt-2">
+                        ملاحظة: لا توجد أحداث تقييم نشطة معرفة في النظام. تظهر القائمة الافتراضية.
+                     </p>
+                 )}
               </div>
            </div>
            <div className="flex justify-end">
               <button 
-                disabled={!period.name || !period.date}
-                onClick={() => setStep('scoring')}
-                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                disabled={!period.name}
+                onClick={handleStartEvaluation}
+                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
               >
-                بدء التقييم <ChevronLeft size={18} />
+                {currentEvalId ? 'متابعة التقييم' : 'بدء التقييم'} <ChevronLeft size={18} />
               </button>
            </div>
         </div>
       )}
 
-      {/* Step 2: Scoring */}
       {step === 'scoring' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-            {/* Sidebar Indicators List */}
+            {/* Sidebar List */}
             <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-fit">
                 <div className="p-4 bg-gray-50 font-bold border-b text-gray-700 flex justify-between items-center">
                   <span>مؤشرات التقييم</span>
@@ -360,150 +478,127 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                             }`}
                         >
                             <span className="truncate ml-2">{idx + 1}- {ind.text}</span>
-                            {scores[ind.id]?.isComplete ? (
-                              <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />
-                            ) : (
-                              <span className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0"></span>
-                            )}
+                            {scores[ind.id]?.isComplete ? <CheckCircle2 size={16} className="text-green-500" /> : <span className="w-4 h-4 rounded-full border border-gray-300"></span>}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Main Scoring Area */}
+            {/* Scoring Area */}
             <div className="lg:col-span-9 space-y-6">
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  {/* Top Bar with Score Summary */}
-                  <div className="bg-gray-50 p-6 border-b border-gray-200 flex justify-between items-start">
-                      <div className="flex gap-4">
-                         <div className="bg-blue-100 text-blue-800 p-4 rounded-lg text-center min-w-[120px]">
-                            <div className="text-sm font-medium mb-1">سلم التقدير</div>
-                            <div className="text-2xl font-bold font-mono" dir="ltr">
-                                {currentIndicator.weight} / {currentScore.score > 0 ? currentScore.score.toFixed(1) : '--'}
-                            </div>
-                            <div className="text-xs text-blue-600 mt-1">متوسط المؤشر: {currentScore.score > 0 ? currentScore.score.toFixed(1) : '--'}%</div>
-                         </div>
-                      </div>
-                      <div className="text-left">
-                         <h3 className="text-xl font-bold text-gray-800 mb-1">{currentIndicator.text}</h3>
-                         <div className="text-sm text-gray-500">الوزن: {currentIndicator.weight}%</div>
-                      </div>
+                  <div className="bg-gray-50 p-6 border-b border-gray-200">
+                     <h3 className="text-xl font-bold text-gray-800 mb-2">{currentIndicator.text}</h3>
+                     <p className="text-sm text-gray-500">{currentIndicator.description}</p>
+                     <div className="mt-2 text-xs bg-blue-50 text-blue-800 px-2 py-1 rounded inline-block">
+                        الوزن النسبي المطبق: <strong>{currentIndicator.weight}</strong> درجة
+                     </div>
                   </div>
 
-                  {/* Main Table */}
                   <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse">
                          <thead className="bg-white text-primary-600 text-sm border-b">
                             <tr>
-                               <th className="px-6 py-4 font-bold text-right w-[33%]">مؤشر التقييم</th>
-                               <th className="px-6 py-4 font-bold text-center w-[10%]">الحد الأقصى</th>
-                               <th className="px-6 py-4 font-bold text-center w-[10%]">الدرجة</th>
-                               <th className="px-6 py-4 font-bold text-center w-[12%]">الحالة</th>
-                               <th className="px-6 py-4 font-bold text-right w-[20%]">مؤشرات التحقق</th>
+                               <th className="px-6 py-4 font-bold text-right w-[40%]">مؤشر التقييم (المعايير)</th>
+                               <th className="px-4 py-4 font-bold text-center w-[10%]">الحد الأقصى</th>
+                               <th className="px-4 py-4 font-bold text-center w-[10%]">الدرجة</th>
+                               <th className="px-4 py-4 font-bold text-center w-[10%]">الحالة</th>
+                               <th className="px-6 py-4 font-bold text-right w-[15%]">مؤشرات التحقق</th>
                                <th className="px-6 py-4 font-bold text-center w-[15%]">الشواهد</th>
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
-                            {currentIndicator.evaluationCriteria.length === 0 && (
-                                <tr>
-                                    <td colSpan={6} className="text-center py-6 text-gray-500">لا توجد معايير تفصيلية لهذا المؤشر في قاعدة البيانات</td>
-                                </tr>
-                            )}
-                            {currentIndicator.evaluationCriteria.map((criteriaText, idx) => {
-                                const subScore = currentScore.subScores?.[idx];
-                                const isCompleted = subScore !== undefined;
-                                
-                                return (
+                            {/* Rows based on Criteria, but Score cols are RowSpanned */}
+                            {currentIndicator.evaluationCriteria.length === 0 ? (
+                                <tr><td colSpan={6} className="p-4 text-center">لا توجد معايير</td></tr>
+                            ) : (
+                                currentIndicator.evaluationCriteria.map((criteriaText, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50">
-                                        {/* Per Row Columns */}
-                                        <td className="px-6 py-4 text-right text-gray-700 font-medium leading-relaxed align-middle">
-                                            {criteriaText}
-                                        </td>
-                                        <td className="px-4 py-4 text-center text-gray-500 font-medium align-middle">
-                                            {currentIndicator.weight}
-                                        </td>
-                                        <td className="px-4 py-4 text-center align-middle">
-                                            <input 
-                                                type="number"
-                                                min="0"
-                                                max={currentIndicator.weight}
-                                                step="0.5"
-                                                className="w-16 h-10 border border-gray-300 rounded-lg text-center font-bold text-gray-700 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none"
-                                                value={subScore !== undefined ? subScore : ''}
-                                                onChange={(e) => updateSubScore(idx, e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-4 text-center align-middle">
-                                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                               {isCompleted ? 'مكتمل' : 'غير مكتمل'} 
-                                            </span>
+                                        <td className="px-6 py-3 text-sm text-gray-700 leading-relaxed border-r border-gray-100">
+                                            • {criteriaText}
                                         </td>
 
-                                        {/* RowSpanned Columns for Verification & Evidence (Last in DOM = Left in RTL) */}
+                                        {/* RowSpanned Columns (Only render for first row) */}
                                         {idx === 0 && (
-                                            <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-6 py-4 align-top border-r border-gray-100">
-                                                <ul className="space-y-3">
-                                                   {currentIndicator.verificationIndicators.length > 0 ? (
-                                                       currentIndicator.verificationIndicators.map((v, vIdx) => (
-                                                          <li key={vIdx} className="flex items-start gap-2 text-sm text-gray-600">
-                                                             <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                                                             {v}
-                                                          </li>
-                                                       ))
-                                                   ) : (
-                                                       <li className="text-gray-400 text-xs">لا توجد مؤشرات تحقق</li>
-                                                   )}
-                                                </ul>
-                                            </td>
-                                        )}
-                                        {idx === 0 && (
-                                            <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-6 py-4 align-top border-r border-gray-100 bg-gray-50/30">
-                                                <div className="space-y-3 min-h-[150px] flex flex-col items-center justify-center">
-                                                    {/* Evidence Simulation */}
-                                                    <div className="text-center text-gray-400 text-xs mb-2">لا توجد شواهد</div>
-                                                    <button className="text-primary-600 text-xs flex items-center gap-1 hover:underline bg-white border border-primary-100 px-3 py-1.5 rounded-full shadow-sm">
-                                                        <UploadCloud size={14} /> إضافة
+                                            <>
+                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center text-gray-500 font-bold border-l border-r border-gray-100 align-top bg-gray-50/50">
+                                                    {currentIndicator.weight}
+                                                </td>
+                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center border-r border-gray-100 align-top bg-white">
+                                                    <input 
+                                                        type="number"
+                                                        min="0"
+                                                        max={currentIndicator.weight}
+                                                        step="0.5"
+                                                        className="w-20 h-12 border-2 border-primary-100 rounded-lg text-center font-bold text-xl text-primary-700 focus:border-primary-500 focus:ring-4 focus:ring-primary-100 outline-none transition-all"
+                                                        value={currentScore.score || ''}
+                                                        onChange={(e) => updateScore(e.target.value)}
+                                                        placeholder="0"
+                                                    />
+                                                </td>
+                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center border-r border-gray-100 align-top bg-gray-50/50">
+                                                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${currentScore.isComplete ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {currentScore.isComplete ? 'مكتمل' : 'غير مكتمل'} 
+                                                    </span>
+                                                </td>
+                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-6 py-4 text-sm text-gray-600 align-top border-r border-gray-100 bg-white">
+                                                    <ul className="space-y-2 list-disc list-inside text-xs">
+                                                        {currentIndicator.verificationIndicators.map((v, i) => (
+                                                            <li key={i}>{v}</li>
+                                                        ))}
+                                                    </ul>
+                                                </td>
+                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 align-top text-center bg-gray-50/50">
+                                                    <button className="text-primary-600 text-xs flex flex-col items-center gap-2 hover:underline bg-white border border-primary-200 px-3 py-2 rounded-lg shadow-sm w-full transition-all hover:bg-primary-50">
+                                                        <UploadCloud size={20} /> 
+                                                        <span>إضافة شواهد</span>
                                                     </button>
-                                                </div>
-                                            </td>
+                                                    <div className="mt-2 text-xs text-gray-400">لا يوجد ملفات</div>
+                                                </td>
+                                            </>
                                         )}
                                     </tr>
-                                );
-                            })}
+                                ))
+                            )}
                          </tbody>
                       </table>
                   </div>
 
-                  {/* Automated Results & Notes */}
+                  {/* Rubric & Improvement */}
                   <div className="bg-gray-50 p-6 border-t border-gray-200">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                            <div>
-                              <label className="block text-xs font-bold text-gray-500 mb-2">درجة السلم للمؤشر (آلي)</label>
-                              <div className="w-full border rounded-lg p-3 bg-white text-gray-800 font-bold flex items-center justify-between shadow-sm">
-                                 <span className="text-lg">
-                                    {currentScore.level > 0 ? `${currentScore.level} من 5` : '---'}
-                                 </span>
-                                 <span className="text-sm text-gray-500 font-normal">
-                                    ({getMasteryLevel(currentScore.score, currentIndicator.weight)})
-                                 </span>
+                              <label className="block text-xs font-bold text-gray-500 mb-2">مستوى الإتقان (آلي)</label>
+                              <div className={`w-full border rounded-lg p-4 bg-white shadow-sm transition-all ${currentScore.level >= 4 ? 'border-green-200 bg-green-50' : ''}`}>
+                                 <div className="flex justify-between items-center mb-2">
+                                     <span className="font-bold text-lg text-gray-800">
+                                        {currentScore.level > 0 ? `المستوى ${currentScore.level}` : '---'}
+                                     </span>
+                                     <span className={`text-sm px-2 py-1 rounded-md font-medium ${currentScore.level >= 4 ? 'bg-green-200 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                                        {getMasteryLevel(currentScore.score, currentIndicator.weight)}
+                                     </span>
+                                 </div>
+                                 <p className="text-sm text-gray-600 italic leading-relaxed">
+                                     {/* Access Rubric JSON safely */}
+                                     {(currentIndicator.rubric as any)?.[currentScore.level]?.description || 'أدخل الدرجة لعرض الوصف'}
+                                 </p>
                               </div>
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-gray-500 mb-2">فرص التحسين (آلي)</label>
-                              <div className="w-full border rounded-lg p-3 bg-white text-sm text-gray-600 min-h-[46px] shadow-sm flex items-center">
+                              <div className="w-full border rounded-lg p-4 bg-white text-sm text-gray-700 min-h-[100px] shadow-sm flex items-start">
                                  {currentScore.improvement || '---'}
                               </div>
                           </div>
                       </div>
                       
                       <div>
-                          <label className="block text-xs font-bold text-gray-500 mb-2 flex items-center gap-1 cursor-pointer w-fit" onClick={() => {}}>
-                             <input type="checkbox" className="ml-2 accent-primary-600" checked={!!currentScore.notes} readOnly /> 
-                             أضف ملاحظات على المؤشر (اختياري)
+                          <label className="block text-xs font-bold text-gray-500 mb-2">
+                             ملاحظات إضافية على المؤشر (اختياري)
                           </label>
                           <textarea 
                               rows={2} 
-                              className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white shadow-sm transition-all"
+                              className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white shadow-sm"
                               placeholder="أضف ملاحظاتك هنا..."
                               value={currentScore.notes}
                               onChange={(e) => updateField('notes', e.target.value)}
@@ -516,7 +611,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                       <button 
                           onClick={() => setCurrentIndicatorIndex(Math.max(0, currentIndicatorIndex - 1))}
                           disabled={currentIndicatorIndex === 0}
-                          className="px-6 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg disabled:opacity-50 transition-colors font-medium"
+                          className="px-6 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg disabled:opacity-50"
                       >
                           السابق
                       </button>
@@ -524,16 +619,16 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                       {currentIndicatorIndex < indicators.length - 1 ? (
                            <button 
                               onClick={() => setCurrentIndicatorIndex(currentIndicatorIndex + 1)}
-                              className="flex items-center gap-2 bg-primary-600 text-white px-8 py-2 rounded-lg hover:bg-primary-700 shadow-md hover:shadow-lg transition-all font-medium"
+                              className="flex items-center gap-2 bg-primary-600 text-white px-8 py-2 rounded-lg hover:bg-primary-700 shadow-sm"
                            >
-                              حفظ والانتقال للتالي <ChevronLeft size={18} />
+                              التالي <ChevronLeft size={18} />
                           </button>
                       ) : (
                            <button 
                               onClick={() => setStep('summary')}
-                              className="flex items-center gap-2 bg-green-600 text-white px-8 py-2 rounded-lg hover:bg-green-700 shadow-md hover:shadow-lg transition-all font-medium"
+                              className="flex items-center gap-2 bg-green-600 text-white px-8 py-2 rounded-lg hover:bg-green-700 shadow-sm"
                            >
-                              حفظ واكتمال التقييم <Save size={18} />
+                              إنهاء التقييم <Save size={18} />
                           </button>
                       )}
                   </div>
@@ -542,7 +637,6 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
         </div>
       )}
 
-      {/* Step 3: Summary */}
       {step === 'summary' && (
           <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
              <div className="text-center mb-8">
@@ -550,7 +644,7 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
                     <CheckCircle2 size={40} />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800">ملخص التقييم</h2>
-                <p className="text-gray-500">تم رصد جميع الدرجات بنجاح</p>
+                <p className="text-gray-500">تم رصد الدرجات بنجاح</p>
              </div>
 
              <div className="bg-gray-50 p-6 rounded-xl mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
@@ -574,9 +668,9 @@ export default function EvaluationFlow({ teacherId, onBack }: EvaluationFlowProp
              </div>
 
              <div className="flex justify-center gap-4">
-                <button onClick={() => setStep('scoring')} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">مراجعة الدرجات</button>
-                <button onClick={() => setStep('print')} className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center gap-2"><Printer size={18} /> طباعة التقييم</button>
-                <button onClick={onBack} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">اعتماد وإرسال</button>
+                <button onClick={() => setStep('scoring')} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">مراجعة</button>
+                <button onClick={() => setStep('print')} className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center gap-2"><Printer size={18} /> طباعة</button>
+                <button onClick={handleFinish} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">حفظ وخروج</button>
              </div>
           </div>
       )}

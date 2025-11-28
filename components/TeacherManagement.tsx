@@ -1,22 +1,35 @@
 
 import React, { useState, useEffect } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter } from 'lucide-react';
-import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School } from '../types';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History } from 'lucide-react';
+import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
+import readXlsxFile from 'read-excel-file';
+import writeXlsxFile from 'write-excel-file';
 
 interface TeacherManagementProps {
   onEvaluate: (teacherId: string) => void;
+  userRole?: UserRole;
+  schoolId?: string;
+  userName?: string;
+  onViewHistory?: (teacherId: string) => void;
 }
 
-export default function TeacherManagement({ onEvaluate }: TeacherManagementProps) {
+export default function TeacherManagement({ onEvaluate, userRole, schoolId, userName, onViewHistory }: TeacherManagementProps) {
   const [subTab, setSubTab] = useState<'list' | 'add' | 'import' | 'specialties'>('list');
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [schools, setSchools] = useState<School[]>([]); // To populate dropdown
+  const [schools, setSchools] = useState<School[]>([]); 
+  const [specialtiesList, setSpecialtiesList] = useState<{id: string, name: string}[]>([]);
+  const [newSpecialty, setNewSpecialty] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // Filtering & Search State
+  // UI States for Edit/View
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
+
+  // Filtering State
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterSchool, setFilterSchool] = useState('');
+  const [filterSchoolId, setFilterSchoolId] = useState('');
   const [filterSpecialty, setFilterSpecialty] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
@@ -27,24 +40,41 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
   // Import Logic State
   const [importStep, setImportStep] = useState<'upload' | 'results'>('upload');
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
+  const [importTargetSchoolId, setImportTargetSchoolId] = useState<string>('');
+
+  // Improved Helper for error messages
+  const getErrorMessage = (error: any): string => {
+    if (!error) return 'حدث خطأ غير معروف';
+    if (error?.message && typeof error.message === 'string') return error.message;
+    if (error?.error_description && typeof error.error_description === 'string') return error.error_description;
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    try {
+        const str = JSON.stringify(error);
+        if (str === '{}' || str === '[]') return 'خطأ غير محدد في النظام';
+        return str;
+    } catch {
+        return 'خطأ غير معروف (تعذر عرض التفاصيل)';
+    }
+  };
 
   // Fetch Data
   const fetchData = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
-        // 1. Fetch Teachers
-        const { data: teachersData, error: teachersError } = await supabase
-            .from('teachers')
-            .select('*')
-            .order('created_at', { ascending: false });
+        // 1. Fetch Schools
+        let schoolsQuery = supabase.from('schools').select('*').order('name');
         
-        if (teachersError) throw teachersError;
+        if (userRole === UserRole.PRINCIPAL && userName) {
+             schoolsQuery = schoolsQuery.eq('manager_name', userName);
+        } else if (userRole === UserRole.PRINCIPAL && schoolId) {
+             schoolsQuery = schoolsQuery.eq('id', schoolId);
+        }
 
-        // 2. Fetch Schools for mapping and dropdown
-        const { data: schoolsData, error: schoolsError } = await supabase.from('schools').select('*');
+        const { data: schoolsData, error: schoolsError } = await schoolsQuery;
         if (schoolsError) throw schoolsError;
 
-        // Map all properties required by School interface
         const mappedSchools: School[] = (schoolsData || []).map((s: any) => ({
              id: s.id,
              name: s.name,
@@ -55,11 +85,31 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
              evaluatorName: s.evaluator_name
         }));
         setSchools(mappedSchools);
-
-        // 3. Fetch Evaluations Status (Check if teacher has evaluation)
-        const { data: evalsData } = await supabase.from('evaluations').select('teacher_id, status');
         
-        // Map data to types
+        // Auto-select school for import if Principal has only one
+        if (userRole === UserRole.PRINCIPAL && mappedSchools.length === 1) {
+            setImportTargetSchoolId(mappedSchools[0].id);
+        }
+
+        // 2. Fetch Teachers
+        let teachersQuery = supabase.from('teachers').select('*').order('created_at', { ascending: false });
+        
+        if (userRole === UserRole.PRINCIPAL) {
+            const mySchoolIds = mappedSchools.map(s => s.id);
+            if (mySchoolIds.length > 0) {
+                teachersQuery = teachersQuery.in('school_id', mySchoolIds);
+            } else {
+                 teachersQuery = teachersQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+            }
+        }
+
+        const { data: teachersData, error: teachersError } = await teachersQuery;
+        if (teachersError) throw teachersError;
+
+        const { data: evalsData } = await supabase.from('evaluations').select('teacher_id, status');
+        const { data: specData } = await supabase.from('specialties').select('*').order('name');
+        setSpecialtiesList(specData || []);
+
         const mappedTeachers: Teacher[] = (teachersData || []).map((t: any) => {
             const evalRecord = evalsData?.find((e: any) => e.teacher_id === t.id);
             let status = EvaluationStatus.NOT_EVALUATED;
@@ -81,8 +131,10 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
 
         setTeachers(mappedTeachers);
 
-    } catch (error) {
+    } catch (error: any) {
+        const msg = getErrorMessage(error);
         console.error('Error fetching data:', error);
+        setErrorMessage(msg);
     } finally {
         setIsLoading(false);
     }
@@ -90,11 +142,47 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [userRole, schoolId, userName]);
+
+  const handleEditTeacher = (teacher: Teacher) => {
+      setNewTeacher({
+          name: teacher.name,
+          nationalId: teacher.nationalId,
+          specialty: teacher.specialty,
+          category: teacher.category,
+          mobile: teacher.mobile,
+          schoolId: teacher.schoolId
+      });
+      setEditingId(teacher.id);
+      setSubTab('add');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteTeacher = async (id: string) => {
+      if (!window.confirm("هل أنت متأكد من حذف هذا المعلم؟ سيتم حذف جميع تقييماته المرتبطة.")) return;
+
+      try {
+          const { error } = await supabase.from('teachers').delete().eq('id', id);
+          if (error) throw error;
+          setTeachers(teachers.filter(t => t.id !== id));
+      } catch (error) {
+          alert('حدث خطأ أثناء الحذف: ' + getErrorMessage(error));
+      }
+  };
 
   const handleSaveTeacher = async () => {
       if (!newTeacher.name || !newTeacher.nationalId) {
           alert("يرجى تعبئة الحقول الأساسية");
+          return;
+      }
+
+      let targetSchoolId = newTeacher.schoolId;
+      if (!targetSchoolId && userRole === UserRole.PRINCIPAL && schools.length === 1) {
+          targetSchoolId = schools[0].id;
+      }
+
+      if (!targetSchoolId) {
+          alert("يرجى اختيار المدرسة");
           return;
       }
 
@@ -106,39 +194,171 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
               specialty: newTeacher.specialty,
               category: newTeacher.category,
               mobile: newTeacher.mobile,
-              school_id: newTeacher.schoolId
+              school_id: targetSchoolId
           };
-
-          const { error } = await supabase.from('teachers').insert([payload]);
-          if (error) throw error;
+          
+          if (editingId) {
+              const { error } = await supabase.from('teachers').update(payload).eq('id', editingId);
+              if (error) throw error;
+          } else {
+              const { error } = await supabase.from('teachers').insert([payload]);
+              if (error) throw error;
+          }
 
           await fetchData();
           setSubTab('list');
-          setNewTeacher({ category: TeacherCategory.TEACHER }); // Reset
+          setNewTeacher({ category: TeacherCategory.TEACHER });
+          setEditingId(null);
       } catch (error: any) {
           console.error("Error saving teacher:", error);
-          if (error.code === '23505') {
+          const msg = getErrorMessage(error);
+          
+          if (error?.code === '23505') {
               alert("رقم الهوية مسجل مسبقاً");
           } else {
-              alert("حدث خطأ أثناء الحفظ");
+              alert(`حدث خطأ أثناء الحفظ: ${msg}`);
           }
       } finally {
           setIsSaving(false);
       }
   };
 
-  // Mock Import Logic
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Simulate processing
-    setTimeout(() => {
-        const mockResults: ImportResult[] = [
-            { row: 1, nationalId: '1011111111', name: 'خالد الزهراني', specialty: 'فيزياء', mobile: '0500000000', addedBy: 'Admin', status: 'success' },
-            { row: 2, nationalId: '1022222222', name: 'فهد الدوسري', specialty: 'كيمياء', mobile: '0511111111', addedBy: 'Admin', status: 'success' },
-            { row: 3, nationalId: 'invalid', name: 'خطأ في السجل', specialty: '-', mobile: '-', addedBy: 'Admin', status: 'failed', message: 'رقم الهوية غير صحيح' },
-        ];
-        setImportResults(mockResults);
-        setImportStep('results');
-    }, 1500);
+  const handleCancelEdit = () => {
+      setSubTab('list');
+      setNewTeacher({ category: TeacherCategory.TEACHER });
+      setEditingId(null);
+  };
+
+  const handleAddSpecialty = async () => {
+      if(!newSpecialty.trim()) return;
+      try {
+          const { data, error } = await supabase.from('specialties').insert([{ name: newSpecialty.trim() }]).select().single();
+          if(error) throw error;
+          setSpecialtiesList([...specialtiesList, data]);
+          setNewSpecialty('');
+      } catch(err) {
+          alert('خطأ: ' + getErrorMessage(err));
+      }
+  };
+
+  const handleDeleteSpecialty = async (id: string) => {
+      if(!confirm('هل أنت متأكد من حذف التخصص؟')) return;
+      try {
+          const { error } = await supabase.from('specialties').delete().eq('id', id);
+          if(error) throw error;
+          setSpecialtiesList(specialtiesList.filter(s => s.id !== id));
+      } catch(err) {
+          console.error(err);
+          alert('خطأ في الحذف: ' + getErrorMessage(err));
+      }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!importTargetSchoolId) {
+        alert("يرجى اختيار المدرسة أولاً");
+        e.target.value = ''; 
+        return;
+    }
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImportStep('results');
+    setImportResults([]);
+    const results: ImportResult[] = [];
+
+    try {
+        const rows = await readXlsxFile(file);
+        
+        if (rows.length < 2) { 
+            alert("الملف فارغ أو لا يحتوي على بيانات"); 
+            setImportStep('upload'); 
+            return; 
+        }
+        
+        // Headers are in rows[0]
+        const headers = rows[0].map(h => String(h).trim());
+        const nameIdx = headers.findIndex(h => h.includes('اسم') || h.includes('Name'));
+        const idIdx = headers.findIndex(h => h.includes('هوية') || h.includes('National'));
+        const specIdx = headers.findIndex(h => h.includes('تخصص') || h.includes('Specialty'));
+        const mobIdx = headers.findIndex(h => h.includes('جوال') || h.includes('Mobile'));
+
+        if (nameIdx === -1 || idIdx === -1) { 
+            alert("لم يتم التعرف على الأعمدة. الرجاء استخدام القالب المعتمد."); 
+            setImportStep('upload'); 
+            return; 
+        }
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            // Handle potentially empty rows
+            if (!row || row.length === 0) continue;
+
+            const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+            const nationalId = row[idIdx] ? String(row[idIdx]).trim() : '';
+            const specialty = specIdx > -1 && row[specIdx] ? String(row[specIdx]).trim() : '';
+            const mobile = mobIdx > -1 && row[mobIdx] ? String(row[mobIdx]).trim() : '';
+
+            if (!name || !nationalId) { 
+                results.push({ row: i + 1, nationalId, name, specialty, mobile, addedBy: '-', status: 'failed', message: 'بيانات ناقصة (الاسم أو الهوية)' }); 
+                continue; 
+            }
+            
+            try {
+                 const { error } = await supabase.from('teachers').insert([{ 
+                     name: name, 
+                     national_id: nationalId, 
+                     specialty: specialty, 
+                     mobile: mobile, 
+                     category: TeacherCategory.TEACHER, 
+                     school_id: importTargetSchoolId 
+                 }]);
+                 
+                 if (error) throw error;
+                 results.push({ row: i + 1, nationalId, name, specialty, mobile, addedBy: 'System', status: 'success' });
+            } catch (err: any) {
+                let msg = 'خطأ في الحفظ';
+                if (err.code === '23505') msg = 'رقم الهوية مكرر';
+                else msg = getErrorMessage(err);
+                results.push({ row: i + 1, nationalId, name, specialty, mobile, addedBy: '-', status: 'failed', message: msg });
+            }
+        }
+        setImportResults(results);
+        fetchData(); 
+
+    } catch (error) {
+        console.error("Excel Read Error:", error);
+        alert("حدث خطأ أثناء قراءة ملف Excel. يرجى التأكد من صلاحية الملف.");
+        setImportStep('upload');
+    } finally {
+        e.target.value = '';
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    const data = [
+      [
+        { value: 'الاسم الكامل', fontWeight: 'bold' },
+        { value: 'رقم الهوية', fontWeight: 'bold' },
+        { value: 'التخصص', fontWeight: 'bold' },
+        { value: 'رقم الجوال', fontWeight: 'bold' }
+      ],
+      [
+        { value: 'مثال: محمد علي', type: String },
+        { value: '10xxxxxxxxx', type: String },
+        { value: 'رياضيات', type: String },
+        { value: '05xxxxxxxx', type: String }
+      ]
+    ];
+
+    try {
+        await writeXlsxFile(data, {
+            fileName: 'teachers_template.xlsx'
+        });
+    } catch (error) {
+        console.error("Template generation error:", error);
+        alert("حدث خطأ أثناء إنشاء القالب.");
+    }
   };
 
   const renderStatus = (status: EvaluationStatus) => {
@@ -153,117 +373,144 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
   };
 
   // Filter Logic
-  const uniqueSpecialties = Array.from(new Set(teachers.map(t => t.specialty))).filter(Boolean).sort();
-
-  const filteredTeachers = teachers.filter(t => {
-      const matchSearch = searchTerm === '' || 
-                          t.name.includes(searchTerm) || 
-                          t.nationalId.includes(searchTerm);
-      
-      const matchSchool = filterSchool === '' || t.schoolId === filterSchool;
-      const matchSpecialty = filterSpecialty === '' || t.specialty === filterSpecialty;
-      const matchStatus = filterStatus === '' || t.status === filterStatus;
-
-      return matchSearch && matchSchool && matchSpecialty && matchStatus;
+  const uniqueSpecialties = Array.from(new Set(teachers.map(t => t.specialty).filter(Boolean)));
+  const filteredTeachers = teachers.filter(teacher => {
+    const matchesSearch = searchTerm === '' || teacher.name.includes(searchTerm) || teacher.nationalId.includes(searchTerm);
+    const matchesSchool = filterSchoolId === '' || teacher.schoolId === filterSchoolId;
+    const matchesSpecialty = filterSpecialty === '' || teacher.specialty === filterSpecialty;
+    const matchesStatus = filterStatus === '' || teacher.status === filterStatus;
+    return matchesSearch && matchesSchool && matchesSpecialty && matchesStatus;
   });
 
   const clearFilters = () => {
       setSearchTerm('');
-      setFilterSchool('');
+      setFilterSchoolId('');
       setFilterSpecialty('');
       setFilterStatus('');
   };
 
-  const hasActiveFilters = searchTerm || filterSchool || filterSpecialty || filterStatus;
+  const hasActiveFilters = searchTerm || filterSchoolId || filterSpecialty || filterStatus;
 
   return (
     <div className="space-y-6">
-      {/* Sub Tabs */}
       <div className="flex border-b border-gray-200 gap-6">
-        <button onClick={() => setSubTab('list')} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
-        <button onClick={() => setSubTab('add')} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>إضافة معلم</button>
+        <button onClick={() => { setSubTab('list'); setEditingId(null); }} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
+        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+            {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
+        </button>
         <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
         <button onClick={() => setSubTab('specialties')} className={`pb-3 font-medium transition-colors ${subTab === 'specialties' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>إدارة التخصصات</button>
       </div>
 
-      {/* Content based on SubTab */}
       {subTab === 'list' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            {/* Filtering & Search Toolbar */}
-            <div className="p-4 border-b border-gray-100 bg-gray-50 space-y-4">
-                <div className="flex flex-col md:flex-row justify-between gap-4 items-center">
-                    <div className="relative w-full md:w-80">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+            {/* ... View Modal ... */}
+            {viewTeacher && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+                        <div className="flex justify-between items-center p-6 border-b">
+                            <h3 className="text-xl font-bold flex items-center gap-2">
+                                <User className="text-primary-600" /> 
+                                {viewTeacher.name}
+                            </h3>
+                            <button onClick={() => setViewTeacher(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                        </div>
+                        <div className="p-6 space-y-4 text-sm">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-50 p-3 rounded-lg">
+                                    <label className="text-xs text-gray-500 block mb-1">رقم الهوية</label>
+                                    <p className="font-mono font-medium">{viewTeacher.nationalId}</p>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded-lg">
+                                    <label className="text-xs text-gray-500 block mb-1">الفئة الوظيفية</label>
+                                    <p className="font-medium text-primary-700">{viewTeacher.category}</p>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded-lg">
+                                    <label className="text-xs text-gray-500 block mb-1">التخصص</label>
+                                    <p className="font-medium">{viewTeacher.specialty}</p>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded-lg">
+                                    <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
+                                    <p className="font-medium" dir="ltr">{viewTeacher.mobile || '-'}</p>
+                                </div>
+                            </div>
+                            <div className="border-t pt-4">
+                                <label className="text-xs text-gray-500 block mb-2">المدرسة التابع لها</label>
+                                <div className="flex items-center gap-2 font-medium">
+                                    <CheckCircle size={16} className="text-green-500"/>
+                                    {schools.find(s => s.id === viewTeacher.schoolId)?.name || 'غير محدد'}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
+                            <button onClick={() => setViewTeacher(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Error Banner */}
+            {errorMessage && (
+                <div className="bg-red-50 text-red-700 p-4 border-b border-red-100 flex items-center gap-2">
+                    <XCircle size={20} />
+                    <span>{errorMessage}</span>
+                    <button onClick={fetchData} className="mr-auto underline text-sm">إعادة المحاولة</button>
+                </div>
+            )}
+
+            {/* Filter Bar */}
+            <div className="p-4 border-b border-gray-100 bg-gray-50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                <div className="flex flex-1 flex-col md:flex-row gap-3 w-full">
+                    <div className="relative flex-1 max-w-md">
                         <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
                         <input 
                             type="text" 
-                            placeholder="بحث باسم المعلم أو الهوية" 
+                            placeholder="بحث بالاسم أو رقم الهوية..." 
                             className="w-full pr-10 pl-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={fetchData} className="text-gray-500 hover:text-gray-700 text-sm px-3 py-2 border rounded-lg bg-white">تحديث البيانات</button>
-                    </div>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 text-gray-500 text-sm ml-2">
-                        <Filter size={16} />
-                        <span>تصفية حسب:</span>
-                    </div>
                     
-                    <select 
-                        className="border rounded-lg px-3 py-2 text-sm bg-white focus:ring-1 focus:ring-primary-500 outline-none min-w-[150px]"
-                        value={filterSchool}
-                        onChange={(e) => setFilterSchool(e.target.value)}
-                    >
-                        <option value="">كل المدارس</option>
-                        {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-
-                    <select 
-                        className="border rounded-lg px-3 py-2 text-sm bg-white focus:ring-1 focus:ring-primary-500 outline-none min-w-[150px]"
-                        value={filterSpecialty}
-                        onChange={(e) => setFilterSpecialty(e.target.value)}
-                    >
-                        <option value="">كل التخصصات</option>
-                        {uniqueSpecialties.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-
-                    <select 
-                        className="border rounded-lg px-3 py-2 text-sm bg-white focus:ring-1 focus:ring-primary-500 outline-none min-w-[150px]"
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                    >
-                        <option value="">حالة التقييم</option>
-                        <option value={EvaluationStatus.NOT_EVALUATED}>لم يتم التقييم</option>
-                        <option value={EvaluationStatus.DRAFT}>مسودة</option>
-                        <option value={EvaluationStatus.COMPLETED}>مقيم</option>
-                    </select>
-
-                    {hasActiveFilters && (
-                        <button 
-                            onClick={clearFilters}
-                            className="text-red-600 text-sm px-3 py-2 hover:bg-red-50 rounded-lg transition-colors font-medium"
-                        >
-                            مسح الفلاتر
-                        </button>
-                    )}
+                    <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+                        {schools.length > 0 && (
+                            <select 
+                                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[140px]"
+                                value={filterSchoolId} onChange={(e) => setFilterSchoolId(e.target.value)}
+                            >
+                                <option value="">كل المدارس</option>
+                                {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        )}
+                        <select className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[130px]" value={filterSpecialty} onChange={(e) => setFilterSpecialty(e.target.value)}>
+                            <option value="">كل التخصصات</option>
+                            {uniqueSpecialties.map(spec => <option key={spec} value={spec}>{spec}</option>)}
+                        </select>
+                        <select className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[130px]" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                            <option value="">حالة التقييم</option>
+                            <option value={EvaluationStatus.NOT_EVALUATED}>لم يتم التقييم</option>
+                            <option value={EvaluationStatus.DRAFT}>مسودة</option>
+                            <option value={EvaluationStatus.COMPLETED}>مقيم</option>
+                        </select>
+                        {hasActiveFilters && (
+                            <button onClick={clearFilters} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-sm flex items-center gap-1 transition-colors whitespace-nowrap"><X size={16} /> مسح</button>
+                        )}
+                    </div>
                 </div>
+                <div><button onClick={fetchData} className="text-gray-500 hover:text-gray-700 text-sm px-3 py-2">تحديث</button></div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Table */}
+            <div className="overflow-x-auto min-h-[400px]">
                 {isLoading ? (
-                    <div className="flex justify-center p-8">
-                         <Loader2 className="animate-spin text-primary-600" size={30} />
-                    </div>
+                    <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary-600" size={30} /></div>
                 ) : (
                 <table className="w-full text-right">
                     <thead className="bg-gray-50 text-gray-600 text-sm font-semibold">
                         <tr>
                             <th className="px-6 py-4">الاسم الكامل</th>
                             <th className="px-6 py-4">رقم الهوية</th>
+                            <th className="px-6 py-4">فئة المعلم</th>
                             <th className="px-6 py-4">التخصص</th>
                             <th className="px-6 py-4">المدرسة</th>
                             <th className="px-6 py-4">الحالة</th>
@@ -271,230 +518,190 @@ export default function TeacherManagement({ onEvaluate }: TeacherManagementProps
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {filteredTeachers.length === 0 && (
-                            <tr><td colSpan={6} className="text-center py-8 text-gray-500">لا يوجد معلمين مطابقين للبحث</td></tr>
-                        )}
-                        {filteredTeachers.map(teacher => {
-                            const schoolName = schools.find(s => s.id === teacher.schoolId)?.name || '-';
-                            return (
-                                <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-900">{teacher.name}</td>
-                                    <td className="px-6 py-4 text-gray-600 font-mono text-sm">{teacher.nationalId}</td>
-                                    <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
-                                    <td className="px-6 py-4">
-                                        {renderStatus(teacher.status)}
-                                    </td>
-                                    <td className="px-6 py-4 flex justify-center items-center gap-2">
-                                        <button 
-                                            onClick={() => onEvaluate(teacher.id)}
-                                            className="text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-                                        >
-                                            تقييم المعلم
-                                        </button>
-                                        <div className="relative group">
-                                            <button className="p-1 text-gray-400 hover:text-gray-600">
-                                                <MoreHorizontal size={20} />
-                                            </button>
-                                            <div className="hidden group-hover:block absolute left-0 mt-1 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10">
-                                                <button className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">عرض</button>
-                                                <button className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">تحرير</button>
-                                                <button className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50">حذف</button>
+                        {filteredTeachers.length === 0 ? (
+                            <tr>
+                                <td colSpan={7} className="text-center py-8 text-gray-500 flex flex-col items-center justify-center gap-2">
+                                    <Search size={32} className="text-gray-300" />
+                                    <p>لا توجد نتائج مطابقة.</p>
+                                </td>
+                            </tr>
+                        ) : (
+                            filteredTeachers.map(teacher => {
+                                const schoolName = schools.find(s => s.id === teacher.schoolId)?.name || '-';
+                                return (
+                                    <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4 font-medium text-gray-900">{teacher.name}</td>
+                                        <td className="px-6 py-4 text-gray-600 font-mono text-sm">{teacher.nationalId}</td>
+                                        <td className="px-6 py-4 text-sm">
+                                            <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs border border-blue-100">{teacher.category}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
+                                        <td className="px-6 py-4">{renderStatus(teacher.status)}</td>
+                                        <td className="px-6 py-4 flex justify-center items-center gap-2">
+                                            {onViewHistory ? (
+                                                <button 
+                                                    onClick={() => onViewHistory(teacher.id)}
+                                                    className="bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 px-3 py-1.5 rounded text-xs font-bold transition-colors flex items-center gap-1"
+                                                >
+                                                    <History size={14}/> سجل التقييمات
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => onEvaluate(teacher.id)}
+                                                    className="text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                                                >
+                                                    تقييم
+                                                </button>
+                                            )}
+                                            
+                                            <div className="relative group">
+                                                <button className="p-1 text-gray-400 hover:text-gray-600"><MoreHorizontal size={20} /></button>
+                                                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden">
+                                                    <button onClick={() => setViewTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">عرض</button>
+                                                    <button onClick={() => handleEditTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">تحرير</button>
+                                                    <button onClick={() => handleDeleteTeacher(teacher.id)} className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50">حذف</button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
                     </tbody>
                 </table>
                 )}
             </div>
-            <div className="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-                العدد الإجمالي: {filteredTeachers.length} معلم
+            {/* ... pagination/footer ... */}
+            <div className="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between">
+                <span>عرض {filteredTeachers.length} من أصل {teachers.length} معلم</span>
             </div>
         </div>
       )}
 
+      {/* Add Teacher Tab */}
       {subTab === 'add' && (
          <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-xl font-bold text-gray-800 mb-6">إضافة معلم جديد</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل</label>
-                    <input 
-                        type="text" 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.name || ''}
-                        onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})}
-                    />
-                 </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية</label>
-                    <input 
-                        type="text" 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.nationalId || ''}
-                        onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})}
-                    />
-                 </div>
-                 
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة</label>
-                    <select 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.schoolId || ''}
-                        onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}
-                    >
-                        <option value="">اختر المدرسة</option>
-                        {schools.map(school => (
-                            <option key={school.id} value={school.id}>{school.name}</option>
-                        ))}
-                    </select>
-                 </div>
-
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label>
-                    <select 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.category}
-                        onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}
-                    >
-                        {Object.values(TeacherCategory).map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                    </select>
-                 </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label>
-                    <input 
-                        type="text" 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.specialty || ''}
-                        onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})}
-                    />
-                 </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label>
-                    <input 
-                        type="tel" 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                        value={newTeacher.mobile || ''}
-                        onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})}
-                    />
-                 </div>
+            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                {editingId ? <Edit2 size={24} className="text-primary-600"/> : <Plus size={24} className="text-primary-600"/>}
+                {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم جديد'}
+            </h3>
+             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-6 flex gap-3 text-sm text-blue-800">
+                <Info className="shrink-0 text-blue-600" size={20} />
+                <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام، وسيكون الرمز السري الافتراضي هو <strong>آخر 4 أرقام من الهوية</strong>.</p>
             </div>
-            <div className="mt-8 flex justify-end gap-3">
-                <button onClick={() => setSubTab('list')} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">إلغاء</button>
-                <button 
-                    onClick={handleSaveTeacher}
-                    disabled={isSaving}
-                    className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
-                >
-                    {isSaving && <Loader2 className="animate-spin" size={16} />}
-                    حفظ المعلم
-                </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 {(userRole !== UserRole.PRINCIPAL || schools.length > 1) && (
+                     <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة <span className="text-red-500">*</span></label>
+                        <select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 bg-white" value={newTeacher.schoolId || ''} onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}>
+                            <option value="">اختر المدرسة</option>
+                            {schools.map(school => <option key={school.id} value={school.id}>{school.name}</option>)}
+                        </select>
+                     </div>
+                 )}
+                 {userRole === UserRole.PRINCIPAL && schools.length === 1 && (
+                     <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2"><CheckCircle className="text-blue-600" size={20}/><span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span></div>
+                 )}
+                 {schools.length === 0 && (
+                     <div className="md:col-span-2 bg-red-50 p-3 rounded-lg border border-red-100 flex items-center gap-2"><XCircle className="text-red-600" size={20}/><span className="text-sm text-red-800 font-medium">عفواً، لا توجد مدارس مسجلة.</span></div>
+                 )}
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.name || ''} onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-mono text-left" dir="ltr" placeholder="10xxxxxxxx" value={newTeacher.nationalId || ''} onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label><select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.category} onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}>{Object.values(TeacherCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label><input type="tel" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-left" dir="ltr" value={newTeacher.mobile || ''} onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})} /></div>
+            </div>
+            <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button onClick={handleCancelEdit} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">إلغاء</button>
+                <button onClick={handleSaveTeacher} disabled={isSaving} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">{isSaving && <Loader2 className="animate-spin" size={16} />}{editingId ? 'حفظ التعديلات' : 'حفظ المعلم'}</button>
             </div>
          </div>
       )}
 
+      {/* Import Tab */}
       {subTab === 'import' && importStep === 'upload' && (
           <div className="max-w-3xl mx-auto">
              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><FileText size={18} /> تعليمات الاستيراد</h4>
                 <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
-                    <li>قم بتحميل قالب الاكسل المعتمد.</li>
+                    <li>قم بتحميل قالب Excel المعتمد.</li>
                     <li>تأكد من صحة أرقام الهوية الوطنية.</li>
-                    <li>اختر فئة المعلم الموحدة للملف أو اتركها للكشف التلقائي.</li>
+                    <li>يجب رفع الملف بصيغة <strong>Excel (.xlsx)</strong>.</li>
                 </ul>
-                <button className="mt-3 text-sm font-bold text-blue-700 hover:underline">تحميل القالب</button>
+                <button onClick={handleDownloadTemplate} className="mt-3 text-sm font-bold text-blue-700 hover:underline flex items-center gap-1"><Download size={14}/> تحميل قالب Excel</button>
+             </div>
+             
+             {/* School Selection for Import */}
+             <div className="mb-6">
+                 <label className="block text-sm font-medium text-gray-700 mb-2">اختر المدرسة المراد الاستيراد إليها <span className="text-red-500">*</span></label>
+                 <select 
+                    className="w-full border rounded-lg p-3 focus:ring-2 focus:ring-primary-500 bg-white"
+                    value={importTargetSchoolId}
+                    onChange={(e) => setImportTargetSchoolId(e.target.value)}
+                 >
+                    <option value="">-- اختر المدرسة --</option>
+                    {schools.map(school => (
+                        <option key={school.id} value={school.id}>{school.name}</option>
+                    ))}
+                 </select>
              </div>
 
-             <div className="bg-white p-12 rounded-xl shadow-sm border border-gray-200 text-center border-dashed border-2 border-gray-300 hover:border-primary-500 transition-colors">
+             <div className={`bg-white p-12 rounded-xl shadow-sm border text-center border-dashed border-2 transition-colors ${!importTargetSchoolId ? 'border-gray-200 opacity-50 cursor-not-allowed' : 'border-gray-300 hover:border-primary-500'}`}>
                 <Upload size={48} className="mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900">سحب وافلات ملف الاكسل هنا</h3>
-                <p className="text-gray-500 mt-2 mb-6">أو قم باستعراض الملفات من جهازك</p>
+                <h3 className="text-lg font-medium text-gray-900">سحب وإفلات ملف Excel هنا</h3>
+                <p className="text-sm text-gray-500 mt-2">أو اضغط لاختيار الملف من جهازك</p>
+                
                 <input 
                     type="file" 
                     id="file-upload" 
                     className="hidden" 
-                    accept=".xlsx,.csv"
-                    onChange={handleFileUpload}
+                    accept=".xlsx, .xls" 
+                    onChange={handleFileUpload} 
+                    disabled={!importTargetSchoolId}
                 />
-                <label htmlFor="file-upload" className="cursor-pointer bg-primary-600 text-white px-6 py-2.5 rounded-lg hover:bg-primary-700 inline-block">
-                    اختر الملف
+                <label 
+                    htmlFor="file-upload" 
+                    className={`mt-4 px-6 py-2.5 rounded-lg inline-block font-medium ${!importTargetSchoolId ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary-600 text-white hover:bg-primary-700 cursor-pointer'}`}
+                >
+                    {importTargetSchoolId ? 'اختر ملف Excel' : 'يرجى اختيار المدرسة أولاً'}
                 </label>
              </div>
           </div>
       )}
-
+      
       {subTab === 'import' && importStep === 'results' && (
-          <div className="space-y-6">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                 <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                    <span className="text-gray-500 text-sm">اسم المدرسة</span>
-                    <h4 className="font-bold text-lg">مدرسة الرياض النموذجية</h4>
-                 </div>
-                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <span className="text-green-700 text-sm">عمليات استيراد ناجحة</span>
-                    <h4 className="font-bold text-2xl text-green-800">{importResults.filter(r => r.status === 'success').length}</h4>
-                 </div>
-                 <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                    <span className="text-red-700 text-sm">عمليات استيراد فاشلة</span>
-                    <h4 className="font-bold text-2xl text-red-800">{importResults.filter(r => r.status === 'failed').length}</h4>
-                 </div>
-             </div>
-
-             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+           <div className="space-y-6">
+              <div className="flex justify-end"><button onClick={() => setImportStep('upload')} className="text-primary-600 hover:underline text-sm font-bold">استيراد ملف آخر</button></div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-700">النتائج التفصيلية</div>
-                <table className="w-full text-right">
-                    <thead className="bg-gray-50 text-gray-600 text-sm">
-                        <tr>
-                            <th className="px-6 py-3">رقم الصف</th>
-                            <th className="px-6 py-3">الهوية</th>
-                            <th className="px-6 py-3">الاسم</th>
-                            <th className="px-6 py-3">التخصص</th>
-                            <th className="px-6 py-3">الجوال</th>
-                            <th className="px-6 py-3">المستخدم المسند</th>
-                            <th className="px-6 py-3">الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {importResults.map((result, idx) => (
-                             <tr key={idx} className={result.status === 'failed' ? 'bg-red-50' : ''}>
-                                <td className="px-6 py-3">{result.row}</td>
-                                <td className="px-6 py-3 font-mono">{result.nationalId}</td>
-                                <td className="px-6 py-3">{result.name}</td>
-                                <td className="px-6 py-3">{result.specialty}</td>
-                                <td className="px-6 py-3">{result.mobile}</td>
-                                <td className="px-6 py-3">{result.addedBy}</td>
-                                <td className="px-6 py-3">
-                                    {result.status === 'success' ? (
-                                        <span className="flex items-center gap-1 text-green-600 font-medium text-xs">
-                                            <CheckCircle size={14} /> ناجح
-                                        </span>
-                                    ) : (
-                                        <div className="flex flex-col">
-                                            <span className="flex items-center gap-1 text-red-600 font-medium text-xs">
-                                                <XCircle size={14} /> فشل
-                                            </span>
-                                            <span className="text-xs text-red-500 mt-1">{result.message}</span>
-                                        </div>
-                                    )}
-                                </td>
-                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <div className="max-h-96 overflow-y-auto">
+                    <table className="w-full text-right">
+                        <thead className="bg-gray-50 text-gray-600 text-sm sticky top-0"><tr><th className="px-6 py-3">رقم الصف</th><th className="px-6 py-3">الهوية</th><th className="px-6 py-3">الاسم</th><th className="px-6 py-3">الحالة</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100">{importResults.map((result, idx) => (<tr key={idx} className={result.status === 'failed' ? 'bg-red-50' : ''}><td className="px-6 py-3">{result.row}</td><td className="px-6 py-3 font-mono">{result.nationalId}</td><td className="px-6 py-3">{result.name}</td><td className="px-6 py-3">{result.status === 'success' ? <span className="flex items-center gap-1 text-green-600 font-medium text-xs"><CheckCircle size={14} /> ناجح</span> : <span className="text-red-500 text-xs">{result.message}</span>}</td></tr>))}</tbody>
+                    </table>
+                </div>
              </div>
-          </div>
+           </div>
       )}
 
       {subTab === 'specialties' && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
-              <FileText className="mx-auto text-gray-300 mb-4" size={48} />
-              <h3 className="text-xl font-bold text-gray-700 mb-2">إدارة التخصصات</h3>
-              <p className="text-gray-500">هذه الميزة ستكون متاحة قريباً</p>
+          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-700">قائمة التخصصات المعتمدة</h3>
+                  <div className="flex gap-2">
+                      <input type="text" className="border rounded-lg px-3 py-2 text-sm w-64 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="أدخل اسم التخصص الجديد..." value={newSpecialty} onChange={(e) => setNewSpecialty(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddSpecialty()} />
+                      <button onClick={handleAddSpecialty} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"><Plus size={18} /> إضافة</button>
+                  </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {specialtiesList.map(spec => (
+                      <div key={spec.id} className="group flex justify-between items-center bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg hover:bg-white hover:shadow-sm transition-all">
+                          <span className="text-sm text-gray-700">{spec.name}</span>
+                          <button onClick={() => handleDeleteSpecialty(spec.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
+                      </div>
+                  ))}
+              </div>
           </div>
       )}
     </div>

@@ -1,47 +1,76 @@
 
 import React, { useState } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck } from 'lucide-react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
 import TeacherManagement from './components/TeacherManagement';
 import Analytics from './components/Analytics';
 import EvaluationFlow from './components/EvaluationFlow';
+import IndicatorsManagement from './components/IndicatorsManagement';
 import LoginScreen from './components/LoginScreen';
+import SystemSettings from './components/SystemSettings';
+import TeacherEvaluationDetails from './components/TeacherEvaluationDetails';
+import TeacherProfile from './components/TeacherProfile';
+import EventsManagement from './components/EventsManagement';
+import TeacherEvaluationHistory from './components/TeacherEvaluationHistory';
 
 enum Tab {
   DASHBOARD = 'dashboard',
   SCHOOLS = 'schools',
   TEACHERS = 'teachers',
-  ANALYTICS = 'analytics'
+  ANALYTICS = 'analytics',
+  INDICATORS = 'indicators',
+  SETTINGS = 'settings',
+  EVENTS = 'events',
+  // Teacher Specific Tabs
+  TEACHER_EVALUATION = 'teacher_evaluation',
+  TEACHER_PROFILE = 'teacher_profile'
 }
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
-  const [currentView, setCurrentView] = useState<string>('main'); // 'main', 'import_results', 'evaluate', 'print'
+  
+  // View State (Handling "Sub-routes" within the main structure)
+  const [currentView, setCurrentView] = useState<string>('main'); // 'main', 'history', 'evaluate'
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
 
-  const handleLogin = (role: UserRole) => {
-    // Simulate user data based on role
+  const handleLogin = (userOrRole: UserRole | User) => {
+    
+    // Case 1: Real User Login (Object)
+    if (typeof userOrRole === 'object') {
+        setCurrentUser(userOrRole);
+        setActiveTab(Tab.DASHBOARD);
+        setCurrentView('main');
+        return;
+    }
+
+    // Case 2: Demo Role Login (String)
+    const role = userOrRole;
     let userData: User = {
       id: '1',
-      name: 'مستخدم',
+      name: 'مستخدم تجريبي',
       role: role
     };
 
     switch (role) {
       case UserRole.ADMIN:
-        userData.name = 'مدير النظام';
+        userData.name = 'عبدالله المدير';
         break;
       case UserRole.PRINCIPAL:
-        userData.name = 'أحمد العتيبي';
+        userData.name = 'أحمد العتيبي'; // Matches the seed data manager
+        // Use a valid UUID format for the demo school ID to prevent Postgres "invalid input syntax for type uuid" errors
+        userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+        userData.schoolName = 'مدرسة التجربة';
         break;
       case UserRole.TEACHER:
         userData.name = 'سعيد الشهراني';
+        // Note: For demo teacher, we might need a valid teacher ID in DB, but for now we rely on user mapping
         break;
       case UserRole.EVALUATOR:
-        userData.name = 'خالد المشرف';
+        userData.name = 'خالد المشرف'; // Matches the seed data evaluator
         break;
     }
 
@@ -53,39 +82,109 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setSelectedTeacherId(null);
+    setSelectedEvaluationId(undefined);
     setActiveTab(Tab.DASHBOARD);
   };
 
-  const navigateToEvaluate = (teacherId: string) => {
+  // Navigates to the History List for a teacher
+  const navigateToHistory = (teacherId: string) => {
     setSelectedTeacherId(teacherId);
+    setCurrentView('history');
+  };
+
+  // Navigates to the actual Evaluation Form (New or Edit)
+  const navigateToEvaluate = (teacherId: string, evaluationId?: string) => {
+    setSelectedTeacherId(teacherId);
+    setSelectedEvaluationId(evaluationId); // Undefined means NEW
     setCurrentView('evaluate');
   };
 
   const handleBackToMain = () => {
     setCurrentView('main');
     setSelectedTeacherId(null);
+    setSelectedEvaluationId(undefined);
+  };
+  
+  const handleBackToHistory = () => {
+      if (selectedTeacherId) {
+          setCurrentView('history');
+          setSelectedEvaluationId(undefined);
+      } else {
+          handleBackToMain();
+      }
   };
 
   const renderContent = () => {
-    if (currentView === 'evaluate' && selectedTeacherId) {
-      return <EvaluationFlow teacherId={selectedTeacherId} onBack={handleBackToMain} />;
+    // 1. Specific View Logic (Overrides Tab)
+    if (selectedTeacherId) {
+        if (currentView === 'history') {
+            return (
+                <TeacherEvaluationHistory 
+                    teacherId={selectedTeacherId}
+                    onEvaluate={(evalId) => navigateToEvaluate(selectedTeacherId, evalId)}
+                    onBack={handleBackToMain}
+                />
+            );
+        }
+        if (currentView === 'evaluate') {
+            return (
+                <EvaluationFlow 
+                    teacherId={selectedTeacherId} 
+                    evaluationId={selectedEvaluationId}
+                    onBack={handleBackToHistory} 
+                />
+            );
+        }
     }
 
+    // 2. Main Tab Logic
     switch (activeTab) {
       case Tab.DASHBOARD:
         return <Dashboard 
+          userId={currentUser?.id}
           userName={currentUser?.name || ''} 
+          userRole={currentUser?.role || UserRole.TEACHER}
+          schoolId={currentUser?.schoolId}
           onNavigate={(tab) => setActiveTab(tab)} 
           onImportClick={() => { setActiveTab(Tab.TEACHERS); }}
         />;
       case Tab.SCHOOLS:
-        return <SchoolManagement />;
+        return <SchoolManagement 
+            userRole={currentUser?.role}
+            schoolId={currentUser?.schoolId}
+            userName={currentUser?.name}
+        />;
       case Tab.TEACHERS:
-        return <TeacherManagement onEvaluate={navigateToEvaluate} />;
+        return <TeacherManagement 
+            onEvaluate={(id) => navigateToEvaluate(id)} // Direct Evaluate (Legacy support)
+            onViewHistory={navigateToHistory} // New History Flow
+            userRole={currentUser?.role}
+            schoolId={currentUser?.schoolId}
+            userName={currentUser?.name}
+        />;
       case Tab.ANALYTICS:
-        return <Analytics />;
+        return <Analytics userRole={currentUser?.role} schoolId={currentUser?.schoolId} />;
+      case Tab.INDICATORS:
+        return <IndicatorsManagement />;
+      case Tab.SETTINGS:
+        return <SystemSettings />;
+      case Tab.EVENTS:
+        return <EventsManagement />;
+      // Teacher Specific Views
+      case Tab.TEACHER_EVALUATION:
+         // Use currentUser.id assuming it matches teacher.id for this flow (or map it)
+         return <TeacherEvaluationDetails teacherId={currentUser?.id || ''} onBack={() => setActiveTab(Tab.DASHBOARD)} />;
+      case Tab.TEACHER_PROFILE:
+         return <TeacherProfile teacherId={currentUser?.id || ''} onBack={() => setActiveTab(Tab.DASHBOARD)} />;
       default:
-        return <Dashboard userName={currentUser?.name || ''} onNavigate={(tab) => setActiveTab(tab)} onImportClick={() => {}} />;
+        return <Dashboard 
+            userId={currentUser?.id}
+            userName={currentUser?.name || ''} 
+            userRole={currentUser?.role || UserRole.TEACHER} 
+            schoolId={currentUser?.schoolId}
+            onNavigate={(tab) => setActiveTab(tab)} 
+            onImportClick={() => {}} 
+        />;
     }
   };
 
@@ -101,53 +200,89 @@ export default function App() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab(Tab.DASHBOARD)}>
-                <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold">
-                  ت
-                </div>
-                <span className="text-xl font-bold text-gray-800">نظام تقييم</span>
+                <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md">ت</div>
+                <span className="font-bold text-xl text-gray-800 tracking-tight">نظام تقييم المدارس</span>
               </div>
               
-              <nav className="hidden md:flex space-x-reverse space-x-4">
-                <NavButton 
-                  active={activeTab === Tab.DASHBOARD} 
-                  onClick={() => setActiveTab(Tab.DASHBOARD)} 
-                  icon={<LayoutDashboard size={18} />} 
-                  label="لوحة التحكم" 
-                />
-                <NavButton 
-                  active={activeTab === Tab.SCHOOLS} 
-                  onClick={() => setActiveTab(Tab.SCHOOLS)} 
-                  icon={<School size={18} />} 
-                  label="إدارة المدارس" 
-                />
-                <NavButton 
-                  active={activeTab === Tab.TEACHERS} 
-                  onClick={() => setActiveTab(Tab.TEACHERS)} 
-                  icon={<Users size={18} />} 
-                  label="إدارة المعلمين" 
-                />
-                <NavButton 
-                  active={activeTab === Tab.ANALYTICS} 
-                  onClick={() => setActiveTab(Tab.ANALYTICS)} 
-                  icon={<BarChart3 size={18} />} 
-                  label="التحليلات" 
-                />
+              {/* Navigation Links based on Role */}
+              <nav className="hidden md:flex gap-6 mr-8">
+                <button 
+                  onClick={() => { setActiveTab(Tab.DASHBOARD); setCurrentView('main'); }}
+                  className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.DASHBOARD ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                >
+                  <LayoutDashboard size={18} /> الرئيسة
+                </button>
+                
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                    <button 
+                    onClick={() => { setActiveTab(Tab.SCHOOLS); setCurrentView('main'); }}
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.SCHOOLS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                    <School size={18} /> المدارس
+                    </button>
+                )}
+
+                {(currentUser.role !== UserRole.TEACHER) && (
+                    <button 
+                    onClick={() => { setActiveTab(Tab.TEACHERS); setCurrentView('main'); }}
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.TEACHERS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                    <Users size={18} /> المعلمين
+                    </button>
+                )}
+                
+                {/* Events for Admin and Principal */}
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                   <button 
+                   onClick={() => { setActiveTab(Tab.EVENTS); setCurrentView('main'); }}
+                   className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.EVENTS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                   >
+                   <Calendar size={18} /> الأحداث
+                   </button>
+                )}
+                
+                {/* Admin Only: Indicators & Settings */}
+                {currentUser.role === UserRole.ADMIN && (
+                  <>
+                    <button 
+                    onClick={() => { setActiveTab(Tab.INDICATORS); setCurrentView('main'); }}
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.INDICATORS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                    <AlignLeft size={18} /> المؤشرات
+                    </button>
+
+                    <button 
+                    onClick={() => { setActiveTab(Tab.SETTINGS); setCurrentView('main'); }}
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.SETTINGS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                    <Settings size={18} /> الإعدادات
+                    </button>
+                  </>
+                )}
+
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                    <button 
+                    onClick={() => { setActiveTab(Tab.ANALYTICS); setCurrentView('main'); }}
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.ANALYTICS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                    <BarChart3 size={18} /> التحليلات
+                    </button>
+                )}
               </nav>
             </div>
 
             <div className="flex items-center gap-4">
-               <div className="flex flex-col items-end mr-2">
+               <div className="text-left hidden sm:block">
                   <div className="text-sm font-bold text-gray-900">{currentUser.name}</div>
-                  <div className="text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">{currentUser.role}</div>
+                  <div className="flex items-center gap-1 justify-end text-xs text-gray-500">
+                      {currentUser.role}
+                      {currentUser.schoolName && <span className="bg-gray-100 px-1 rounded text-[10px]">{currentUser.schoolName}</span>}
+                  </div>
                </div>
-               <div className="h-9 w-9 rounded-full bg-primary-100 border border-primary-200 flex items-center justify-center text-primary-700 font-bold">
-                  {currentUser.name[0]}
-               </div>
-               <div className="h-6 w-px bg-gray-200 mx-2"></div>
                <button 
-                onClick={handleLogout}
-                className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50" 
-                title="تسجيل الخروج"
+                 onClick={handleLogout}
+                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
+                 title="تسجيل الخروج"
                >
                  <LogOut size={20} />
                </button>
@@ -161,21 +296,5 @@ export default function App() {
         {renderContent()}
       </main>
     </div>
-  );
-}
-
-function NavButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-        active 
-          ? 'bg-primary-50 text-primary-700' 
-          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
