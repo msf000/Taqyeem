@@ -278,7 +278,10 @@ export default function App() {
       case Tab.SETTINGS:
         return <SystemSettings />;
       case Tab.EVENTS:
-        return <EventsManagement />;
+        return <EventsManagement 
+            schoolId={currentUser?.schoolId} 
+            userRole={currentUser?.role}
+        />;
       case Tab.OBJECTIONS:
         return <ObjectionsManagement schoolId={currentUser?.schoolId} userRole={currentUser?.role} />;
       case Tab.TEACHER_EVALUATION:

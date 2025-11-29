@@ -140,4 +140,5 @@ export interface SchoolEvent {
   end_date: string;
   status: 'active' | 'upcoming' | 'closed';
   description: string;
+  schoolId?: string; // Added schoolId
 }

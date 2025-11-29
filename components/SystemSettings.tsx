@@ -84,7 +84,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_email_school_id
 ON app_users (email, school_id);
 
 -- ==========================================
--- 2. إصلاح مشاكل الحذف (Constraints Fixes)
+-- 2. تخصيص الأحداث لكل مدرسة
+-- ==========================================
+
+-- إضافة عمود المدرسة لجدول الأحداث
+ALTER TABLE school_events ADD COLUMN IF NOT EXISTS school_id uuid REFERENCES schools(id) ON DELETE CASCADE;
+
+-- ==========================================
+-- 3. إصلاح مشاكل الحذف (Constraints Fixes)
 -- ==========================================
 
 -- إصلاح علاقة التقييمات بالمعلمين (حذف التقييم عند حذف المعلم)
@@ -113,7 +120,7 @@ ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_school_id_fkey
     FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
 
 -- ==========================================
--- 3. التأكد من هيكلية الجداول
+-- 4. التأكد من هيكلية الجداول
 -- ==========================================
 
 create table if not exists schools (
@@ -229,6 +236,7 @@ create table if not exists school_events (
   end_date date not null,
   status text default 'upcoming',
   description text,
+  school_id uuid references schools(id) on delete cascade,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -243,7 +251,7 @@ ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] default '{}';
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
--- 4. تحديث سياسات الأمان (RLS)
+-- 5. تحديث سياسات الأمان (RLS)
 -- ==========================================
 
 -- Schools
@@ -280,6 +288,8 @@ create policy "Public Access" on evaluations for all using (true);
 alter table teacher_evidence enable row level security;
 drop policy if exists "Public Access" on teacher_evidence;
 create policy "Public Access" on teacher_evidence for all using (true);
+
+NOTIFY pgrst, 'reload schema';
 `;
 
   useEffect(() => {
@@ -1029,7 +1039,7 @@ create policy "Public Access" on teacher_evidence for all using (true);
                                     <AlertTriangle size={16} /> تحديث هام لتعدد الصلاحيات
                                 </h4>
                                 <p className="text-xs text-blue-800">
-                                    لتفعيل ميزة "سجل واحد بصلاحيات متعددة"، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor. سيقوم الكود بإنشاء عمود للصلاحيات المتعددة ونقل البيانات القديمة إليه.
+                                    لتفعيل ميزة "سجل واحد بصلاحيات متعددة" و "الأحداث المستقلة لكل مدرسة"، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
                                 </p>
                             </div>
 
