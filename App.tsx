@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
@@ -37,44 +37,53 @@ export default function App() {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
 
+  // Restore session on load
+  useEffect(() => {
+      const savedUser = localStorage.getItem('nizam_user');
+      if (savedUser) {
+          try {
+              setCurrentUser(JSON.parse(savedUser));
+          } catch (e) {
+              localStorage.removeItem('nizam_user');
+          }
+      }
+  }, []);
+
   const handleLogin = (userOrRole: UserRole | User) => {
-    
+    let userData: User;
+
     // Case 1: Real User Login (Object)
     if (typeof userOrRole === 'object') {
-        setCurrentUser(userOrRole);
-        setActiveTab(Tab.DASHBOARD);
-        setCurrentView('main');
-        return;
-    }
+        userData = userOrRole;
+    } else {
+        // Case 2: Demo Role Login (String)
+        const role = userOrRole;
+        userData = {
+            id: '1',
+            name: 'مستخدم تجريبي',
+            role: role
+        };
 
-    // Case 2: Demo Role Login (String)
-    const role = userOrRole;
-    let userData: User = {
-      id: '1',
-      name: 'مستخدم تجريبي',
-      role: role
-    };
-
-    switch (role) {
-      case UserRole.ADMIN:
-        userData.name = 'عبدالله المدير';
-        break;
-      case UserRole.PRINCIPAL:
-        userData.name = 'أحمد العتيبي'; // Matches the seed data manager
-        // Use a valid UUID format for the demo school ID to prevent Postgres "invalid input syntax for type uuid" errors
-        userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-        userData.schoolName = 'مدرسة التجربة';
-        break;
-      case UserRole.TEACHER:
-        userData.name = 'سعيد الشهراني';
-        // Note: For demo teacher, we might need a valid teacher ID in DB, but for now we rely on user mapping
-        break;
-      case UserRole.EVALUATOR:
-        userData.name = 'خالد المشرف'; // Matches the seed data evaluator
-        break;
+        switch (role) {
+            case UserRole.ADMIN:
+                userData.name = 'عبدالله المدير';
+                break;
+            case UserRole.PRINCIPAL:
+                userData.name = 'أحمد العتيبي'; 
+                userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+                userData.schoolName = 'مدرسة التجربة';
+                break;
+            case UserRole.TEACHER:
+                userData.name = 'سعيد الشهراني';
+                break;
+            case UserRole.EVALUATOR:
+                userData.name = 'خالد المشرف';
+                break;
+        }
     }
 
     setCurrentUser(userData);
+    localStorage.setItem('nizam_user', JSON.stringify(userData)); // Save Session
     setActiveTab(Tab.DASHBOARD);
     setCurrentView('main');
   };
@@ -84,6 +93,7 @@ export default function App() {
     setSelectedTeacherId(null);
     setSelectedEvaluationId(undefined);
     setActiveTab(Tab.DASHBOARD);
+    localStorage.removeItem('nizam_user'); // Clear Session
   };
 
   // Navigates to the History List for a teacher

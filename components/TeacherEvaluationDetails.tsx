@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List } from 'lucide-react';
+import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List, Trash2 } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, EvaluationData, EvaluationStatus } from '../types';
 import { supabase } from '../supabaseClient';
 import PrintView from './PrintView';
@@ -24,6 +24,10 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
   const [scores, setScores] = useState<Record<string, EvaluationScore>>({});
   const [selectedEvalId, setSelectedEvalId] = useState<string | null>(null);
   
+  // Evidence State (Global)
+  const [globalEvidence, setGlobalEvidence] = useState<any[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+
   // Teacher Specific Info
   const [teacherInfo, setTeacherInfo] = useState<{
       name: string;
@@ -40,7 +44,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
   const [objectionText, setObjectionText] = useState('');
   const [isSubmittingObjection, setIsSubmittingObjection] = useState(false);
 
-  // Evidence State
+  // Evidence Form State
   const [newEvidenceLink, setNewEvidenceLink] = useState('');
   const [newEvidenceDesc, setNewEvidenceDesc] = useState('');
   const [selectedIndicatorId, setSelectedIndicatorId] = useState('');
@@ -83,6 +87,20 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                 evaluatorName: teacherData.schools?.evaluator_name || ''
             });
 
+            // Fetch Indicators for evidence dropdown
+            const category = teacherData.category as TeacherCategory;
+            const { data: indData } = await supabase
+                .from('evaluation_indicators')
+                .select('*')
+                .order('sort_order');
+            
+            // Filter indicators
+            const filteredIndicators = (indData || []).filter((ind: any) => {
+                if (!ind.applicable_categories || ind.applicable_categories.length === 0) return true;
+                return category && ind.applicable_categories.includes(category);
+            });
+            setIndicators(filteredIndicators);
+
             // Fetch Evaluation History
             const { data: historyData, error: historyError } = await supabase
                 .from('evaluations')
@@ -92,6 +110,9 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
             if (historyError) throw historyError;
             setHistoryList(historyData || []);
+
+            // Fetch Global Evidence (Initially)
+            fetchEvidence();
 
         } catch (error) {
             console.error('Error fetching initial data:', error);
@@ -103,33 +124,28 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
     fetchInitialData();
   }, [teacherId]);
 
+  const fetchEvidence = async () => {
+      setEvidenceLoading(true);
+      try {
+          const { data, error } = await supabase
+              .from('teacher_evidence')
+              .select('*')
+              .eq('teacher_id', teacherId)
+              .order('created_at', { ascending: false });
+          
+          if(error) throw error;
+          setGlobalEvidence(data || []);
+      } catch (error) {
+          console.error("Error fetching evidence:", error);
+      } finally {
+          setEvidenceLoading(false);
+      }
+  };
+
   // 2. Fetch Specific Evaluation Details (When an item is selected)
   const fetchEvaluationDetails = async (evalId: string) => {
     setLoading(true);
     try {
-        const category = teacherInfo?.category as TeacherCategory;
-
-        // Fetch Indicators (Filtered)
-        const { data: indData } = await supabase
-          .from('evaluation_indicators')
-          .select('*, evaluation_criteria(text), verification_indicators(text)')
-          .order('sort_order');
-        
-        const mappedIndicators: EvaluationIndicator[] = (indData || [])
-            .map((ind: any) => ({
-                ...ind,
-                evaluationCriteria: ind.evaluation_criteria?.map((c: any) => c.text) || [],
-                verificationIndicators: ind.verification_indicators?.map((v: any) => v.text) || [],
-                categoryWeights: ind.category_weights || {},
-                applicableCategories: ind.applicable_categories || [] 
-            }))
-            .filter((ind: EvaluationIndicator) => {
-                if (!ind.applicableCategories || ind.applicableCategories.length === 0) return true;
-                return category && ind.applicableCategories.includes(category);
-            });
-            
-        setIndicators(mappedIndicators);
-
         // Fetch Evaluation Data
         const { data: evalData } = await supabase
             .from('evaluations')
@@ -150,11 +166,11 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                 scores: evalData.scores,
                 status: status,
                 generalNotes: evalData.general_notes,
-                evaluatorName: '', // Assuming not stored directly for simplicity in this view
+                evaluatorName: '',
                 managerName: '',
                 objectionText: evalData.objection_text,
                 objectionStatus: evalData.objection_status,
-                teacherEvidenceLinks: evalData.teacher_evidence_links || []
+                teacherEvidenceLinks: [] // We use global evidence now
             });
             setScores(evalData.scores || {});
             setObjectionText(evalData.objection_text || '');
@@ -170,6 +186,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
   const handleSelectEvaluation = (evalId: string) => {
       setSelectedEvalId(evalId);
       setViewMode('details');
+      setActiveTab('details'); // Reset to details tab
       fetchEvaluationDetails(evalId);
   };
 
@@ -208,34 +225,46 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
       setIsSubmittingEvidence(true);
       try {
-          const currentLinks = evaluation?.teacherEvidenceLinks || [];
-          const newLink = { 
-              indicatorId: selectedIndicatorId, 
-              url: newEvidenceLink, 
-              description: newEvidenceDesc 
+          const payload = {
+              teacher_id: teacherId,
+              indicator_id: selectedIndicatorId,
+              url: newEvidenceLink,
+              description: newEvidenceDesc
           };
-          const updatedLinks = [...currentLinks, newLink];
 
-          const { error } = await supabase
-              .from('evaluations')
-              .update({ teacher_evidence_links: updatedLinks })
-              .eq('id', selectedEvalId); // Use specific ID
+          const { error } = await supabase.from('teacher_evidence').insert([payload]);
 
           if (error) throw error;
 
-          if (evaluation) {
-              setEvaluation({ ...evaluation, teacherEvidenceLinks: updatedLinks });
-          }
+          await fetchEvidence(); // Refresh list
           
           setNewEvidenceLink('');
           setNewEvidenceDesc('');
           setSelectedIndicatorId('');
-          alert('تم إضافة الشاهد بنجاح');
+          alert('تم إضافة الشاهد بنجاح.');
       } catch (error) {
           const msg = getErrorMessage(error);
           alert('حدث خطأ: ' + msg);
       } finally {
           setIsSubmittingEvidence(false);
+      }
+  };
+
+  const handleDeleteEvidence = async (id: string) => {
+      if (!window.confirm('هل أنت متأكد من حذف هذا الشاهد؟')) return;
+      
+      try {
+          const { error } = await supabase
+              .from('teacher_evidence')
+              .delete()
+              .eq('id', id);
+
+          if (error) throw error;
+
+          setGlobalEvidence(prev => prev.filter(e => e.id !== id));
+      } catch (error) {
+          const msg = getErrorMessage(error);
+          alert('فشل الحذف: ' + msg);
       }
   };
 
@@ -315,6 +344,18 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
             </div>
         )}
 
+        {/* Evidence Access Button (Standalone) */}
+        {viewMode === 'list' && (
+            <div className="flex justify-end">
+                <button 
+                    onClick={() => { setViewMode('details'); setActiveTab('evidence'); }}
+                    className="flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-100 border border-blue-200"
+                >
+                    <UploadCloud size={18} /> بنك شواهدي
+                </button>
+            </div>
+        )}
+
         {/* --- LIST VIEW --- */}
         {viewMode === 'list' && (
             <div className="space-y-6">
@@ -377,7 +418,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                     <button onClick={() => setViewMode('list')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
                         <ArrowRight size={16} /> العودة للسجل
                     </button>
-                    {evaluation?.status === EvaluationStatus.COMPLETED && (
+                    {evaluation?.status === EvaluationStatus.COMPLETED && activeTab !== 'evidence' && (
                         <button 
                             onClick={() => setViewMode('print')}
                             className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-900 flex items-center gap-2 text-sm"
@@ -387,53 +428,60 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                     )}
                 </div>
 
-                {loading ? (
+                {loading && activeTab === 'details' ? (
                     <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>
                 ) : (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        {/* Summary Header */}
-                        <div className="p-6 bg-gradient-to-r from-primary-600 to-primary-700 text-white">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <p className="opacity-90 text-sm mb-1">{evaluation?.periodName}</p>
-                                    <h3 className="text-4xl font-bold">{calculateTotal().toFixed(1)}%</h3>
-                                </div>
-                                <div className="text-left">
-                                    <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg text-lg font-bold">
-                                        {getMasteryLevel(calculateTotal())}
+                        
+                        {/* Only show Score Header if in Details or Objection */}
+                        {activeTab !== 'evidence' && (
+                            <div className="p-6 bg-gradient-to-r from-primary-600 to-primary-700 text-white">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <p className="opacity-90 text-sm mb-1">{evaluation?.periodName}</p>
+                                        <h3 className="text-4xl font-bold">{calculateTotal().toFixed(1)}%</h3>
                                     </div>
-                                    <p className="text-xs mt-2 opacity-80">{evaluation?.status === EvaluationStatus.COMPLETED ? 'تم الاعتماد' : 'مسودة (غير معتمد)'}</p>
+                                    <div className="text-left">
+                                        <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg text-lg font-bold">
+                                            {getMasteryLevel(calculateTotal())}
+                                        </div>
+                                        <p className="text-xs mt-2 opacity-80">{evaluation?.status === EvaluationStatus.COMPLETED ? 'تم الاعتماد' : 'مسودة (غير معتمد)'}</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                         
                         {/* Tabs */}
                         <div className="flex border-b border-gray-200 bg-gray-50">
-                            <button 
-                                onClick={() => setActiveTab('details')}
-                                className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'details' ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                            >
-                                <FileText size={16} /> تفاصيل التقييم
-                            </button>
+                            {selectedEvalId && (
+                                <button 
+                                    onClick={() => setActiveTab('details')}
+                                    className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'details' ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    <FileText size={16} /> تفاصيل التقييم
+                                </button>
+                            )}
                             <button 
                                 onClick={() => setActiveTab('evidence')}
                                 className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'evidence' ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                             >
-                                <UploadCloud size={16} /> الشواهد المرفقة
+                                <UploadCloud size={16} /> بنك الشواهد
                             </button>
-                            <button 
-                                onClick={() => setActiveTab('objection')}
-                                className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'objection' ? 'border-red-500 text-red-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                            >
-                                <AlertCircle size={16} /> الاعتراضات
-                            </button>
+                            {selectedEvalId && (
+                                <button 
+                                    onClick={() => setActiveTab('objection')}
+                                    className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'objection' ? 'border-red-500 text-red-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    <AlertCircle size={16} /> الاعتراضات
+                                </button>
+                            )}
                         </div>
 
                         {/* Content */}
                         <div className="p-6">
                             
                             {/* 1. Details */}
-                            {activeTab === 'details' && (
+                            {activeTab === 'details' && selectedEvalId && (
                                 <div className="space-y-6">
                                     {indicators.map((ind, idx) => {
                                         const scoreData = scores[ind.id] || { score: 0, level: 0, notes: '', improvement: '' };
@@ -461,40 +509,20 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                 </div>
                             )}
 
-                            {/* 2. Evidence */}
+                            {/* 2. Evidence (Independent) */}
                             {activeTab === 'evidence' && (
                                 <div className="space-y-8">
-                                    <div>
-                                        <h4 className="font-bold text-gray-700 mb-4">قائمة الشواهد المرفقة</h4>
-                                        {(!evaluation?.teacherEvidenceLinks || evaluation.teacherEvidenceLinks.length === 0) ? (
-                                            <div className="text-gray-500 text-sm italic bg-gray-50 p-4 rounded text-center">لا توجد شواهد مرفقة حالياً</div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                {evaluation.teacherEvidenceLinks.map((link, i) => {
-                                                    const indName = indicators.find(ind => ind.id === link.indicatorId)?.text || 'مؤشر غير معروف';
-                                                    return (
-                                                        <div key={i} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                                                            <div>
-                                                                <p className="font-bold text-sm text-gray-800">{link.description}</p>
-                                                                <p className="text-xs text-gray-500 mt-1">خاص بـ: {indName}</p>
-                                                            </div>
-                                                            <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                                                                <LinkIcon size={14} /> فتح الرابط
-                                                            </a>
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        )}
+                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800 mb-6">
+                                        <strong>ملاحظة:</strong> الشواهد التي ترفعها هنا يتم حفظها في "بنك شواهدك" وتظهر للمقيم في جميع التقييمات. لا حاجة لإعادة رفع نفس الشاهد لكل فترة تقييم.
                                     </div>
 
                                     {/* Add Evidence Form */}
-                                    <div className="bg-blue-50 p-6 rounded-xl border border-blue-100">
-                                        <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
-                                            <UploadCloud size={18}/> إرفاق شاهد جديد
+                                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                        <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <UploadCloud size={18} className="text-primary-600"/> إرفاق شاهد جديد
                                         </h4>
-                                        <div className="space-y-4">
-                                            <div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="md:col-span-2">
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">المؤشر المرتبط</label>
                                                 <select 
                                                     className="w-full border rounded-lg p-2.5 bg-white text-sm"
@@ -508,17 +536,17 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">وصف الشاهد (اسم الملف/المستند)</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">وصف الشاهد</label>
                                                 <input 
                                                     type="text" 
                                                     className="w-full border rounded-lg p-2.5 text-sm"
-                                                    placeholder="مثال: شهادة حضور دورة الذكاء الاصطناعي"
+                                                    placeholder="مثال: شهادة حضور دورة"
                                                     value={newEvidenceDesc}
                                                     onChange={(e) => setNewEvidenceDesc(e.target.value)}
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">رابط الشاهد (Drive, OneDrive, Dropbox)</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">الرابط</label>
                                                 <input 
                                                     type="url" 
                                                     className="w-full border rounded-lg p-2.5 text-sm"
@@ -526,23 +554,59 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                     value={newEvidenceLink}
                                                     onChange={(e) => setNewEvidenceLink(e.target.value)}
                                                 />
-                                                <p className="text-xs text-gray-500 mt-1">يرجى التأكد من أن الرابط متاح للمشاركة (Public or Shared with Organization).</p>
                                             </div>
-                                            <button 
-                                                onClick={handleAddEvidence}
-                                                disabled={isSubmittingEvidence}
-                                                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-bold text-sm flex justify-center items-center gap-2 disabled:opacity-70"
-                                            >
-                                                {isSubmittingEvidence && <Loader2 className="animate-spin" size={16} />}
-                                                حفظ الشاهد
-                                            </button>
                                         </div>
+                                        <button 
+                                            onClick={handleAddEvidence}
+                                            disabled={isSubmittingEvidence}
+                                            className="mt-4 w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 font-bold text-sm flex justify-center items-center gap-2 disabled:opacity-70"
+                                        >
+                                            {isSubmittingEvidence && <Loader2 className="animate-spin" size={16} />}
+                                            حفظ الشاهد
+                                        </button>
+                                    </div>
+
+                                    {/* List */}
+                                    <div>
+                                        <h4 className="font-bold text-gray-700 mb-4">قائمة شواهدي المرفقة</h4>
+                                        {evidenceLoading ? (
+                                            <div className="text-center py-4"><Loader2 className="animate-spin mx-auto text-gray-400"/></div>
+                                        ) : globalEvidence.length === 0 ? (
+                                            <div className="text-gray-500 text-sm italic bg-gray-50 p-4 rounded text-center">لا توجد شواهد مرفقة حالياً</div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {globalEvidence.map((link, i) => {
+                                                    const indName = indicators.find(ind => ind.id === link.indicator_id)?.text || 'مؤشر غير معروف';
+                                                    return (
+                                                        <div key={link.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 group hover:border-blue-200 transition-colors">
+                                                            <div>
+                                                                <p className="font-bold text-sm text-gray-800">{link.description}</p>
+                                                                <p className="text-xs text-gray-500 mt-1">خاص بـ: {indName}</p>
+                                                                <p className="text-[10px] text-gray-400 mt-1">{new Date(link.created_at).toLocaleDateString('ar-SA')}</p>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1 bg-white border px-3 py-1.5 rounded">
+                                                                    <LinkIcon size={14} /> فتح
+                                                                </a>
+                                                                <button 
+                                                                    onClick={() => handleDeleteEvidence(link.id)}
+                                                                    className="text-red-500 hover:bg-red-100 p-2 rounded transition-colors"
+                                                                    title="حذف الشاهد"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
 
                             {/* 3. Objection */}
-                            {activeTab === 'objection' && (
+                            {activeTab === 'objection' && selectedEvalId && (
                                 <div className="space-y-6">
                                     {evaluation?.status !== EvaluationStatus.COMPLETED && (
                                         <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg flex items-center gap-2 text-sm">

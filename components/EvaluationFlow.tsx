@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar } from 'lucide-react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar, Link as LinkIcon, ExternalLink, FileText } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
@@ -24,6 +24,9 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const [period, setPeriod] = useState({ name: '', date: new Date().toISOString().split('T')[0] });
   const [scores, setScores] = useState<Record<string, EvaluationScore>>({});
   const [generalNotes, setGeneralNotes] = useState('');
+  
+  // New State for Teacher Evidence (Global from table)
+  const [teacherEvidenceLinks, setTeacherEvidenceLinks] = useState<{ id: string, indicatorId: string, url: string, description: string }[]>([]);
   
   // Dynamic Events List
   const [availableEvents, setAvailableEvents] = useState<SchoolEvent[]>([]);
@@ -135,24 +138,57 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
         setIndicators(mappedIndicators);
 
-        // 3. Fetch Active Evaluation Events (Try catch to handle missing table gracefully)
+        // 3. Fetch Active Evaluation Events and Auto-Select
         try {
             const { data: eventsData, error: evError } = await supabase
             .from('school_events')
             .select('*')
             .eq('type', 'evaluation')
             .in('status', ['active', 'upcoming'])
+            .order('status', { ascending: true }) // 'active' comes before 'upcoming' alphabetically? No, 'active' < 'upcoming'
             .order('start_date', { ascending: true });
             
             if (!evError && eventsData) {
                 setAvailableEvents(eventsData);
+                
+                // AUTO-SELECT LOGIC:
+                // If it's a NEW evaluation (no ID) AND we have an active event, select it.
+                if (!currentEvalId && !evaluationId) {
+                    const activeEvent = eventsData.find((e: any) => e.status === 'active');
+                    if (activeEvent) {
+                        setPeriod(prev => ({ ...prev, name: activeEvent.name }));
+                    } else if (eventsData.length > 0) {
+                        // Fallback to first upcoming if no active
+                        setPeriod(prev => ({ ...prev, name: eventsData[0].name }));
+                    }
+                }
             }
         } catch (e) {
             // Ignore if table doesn't exist, we fallback to default list
             console.log('Events table might not exist yet or empty');
         }
 
-        // 4. Fetch Evaluation Data
+        // 4. Fetch Global Teacher Evidence
+        try {
+            const { data: evidenceData } = await supabase
+                .from('teacher_evidence')
+                .select('*')
+                .eq('teacher_id', teacherId);
+            
+            if (evidenceData) {
+                const mappedEvidence = evidenceData.map((e: any) => ({
+                    id: e.id,
+                    indicatorId: e.indicator_id,
+                    url: e.url,
+                    description: e.description
+                }));
+                setTeacherEvidenceLinks(mappedEvidence);
+            }
+        } catch (e) {
+            console.log("Error fetching evidence", e);
+        }
+
+        // 5. Fetch Evaluation Data
         let evalQuery = supabase.from('evaluations').select('*');
         
         if (currentEvalId) {
@@ -160,19 +196,31 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             evalQuery = evalQuery.eq('id', currentEvalId);
         } else {
             // Default logic: Find most recent draft or completed for this teacher
-            evalQuery = evalQuery.eq('teacher_id', teacherId).order('created_at', { ascending: false }).limit(1);
+            // This part might be skipped if we want to force new evaluation when no ID passed
+            // But if we want to "resume" the latest draft, keep it.
+            // However, typically onEvaluate() without ID means "New".
+            if (!evaluationId) {
+                 // Check if there is already a draft for the *Active* period? 
+                 // For now, let's just create new if ID is missing to avoid confusion.
+                 // So we skip fetching if no ID is provided.
+            } else {
+                 evalQuery = evalQuery.eq('id', evaluationId);
+            }
         }
 
-        const { data: evalData } = await evalQuery.single();
+        if (currentEvalId) {
+            const { data: evalData } = await evalQuery.single();
 
-        if (evalData) {
-          setCurrentEvalId(evalData.id); // Ensure we lock onto this ID
-          setPeriod({ name: evalData.period_name || '', date: evalData.eval_date || new Date().toISOString().split('T')[0] });
-          setScores(evalData.scores || {});
-          setGeneralNotes(evalData.general_notes || '');
-          if (Object.keys(evalData.scores || {}).length > 0) {
-             setStep('scoring');
-          }
+            if (evalData) {
+              setCurrentEvalId(evalData.id); // Ensure we lock onto this ID
+              setPeriod({ name: evalData.period_name || '', date: evalData.eval_date || new Date().toISOString().split('T')[0] });
+              setScores(evalData.scores || {});
+              setGeneralNotes(evalData.general_notes || '');
+              
+              if (Object.keys(evalData.scores || {}).length > 0) {
+                 setStep('scoring');
+              }
+            }
         }
       } catch (error: any) {
         // If no rows found (PGRST116), it's fine, we start fresh.
@@ -206,12 +254,11 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             scores: scores,
             general_notes: generalNotes,
             total_score: calculateTotal(),
-            status: Object.keys(scores).length === indicators.length && indicators.length > 0 ? 'completed' : 'draft'
+            status: Object.keys(scores).length === indicators.length && indicators.length > 0 ? 'completed' : 'draft',
+            // No need to save evidence here anymore, as it's in a separate table
         };
 
         // If we have an ID, update. Else insert.
-        // IMPORTANT: We only select 'id' to avoid "Schema Cache" errors if the table has other columns (like teacher_evidence_links) 
-        // that are not in the local type definition or cache but exist in DB, or vice versa.
         let query;
         if (currentEvalId) {
              query = supabase.from('evaluations').update(payload).eq('id', currentEvalId).select('id');
@@ -357,6 +404,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     return (Object.values(scores) as EvaluationScore[]).reduce((acc: number, curr: EvaluationScore) => acc + (curr.score || 0), 0);
   };
 
+  // --- Render Evidence Logic ---
+  const getCurrentIndicatorEvidence = () => {
+      if (!currentIndicator) return [];
+      return teacherEvidenceLinks.filter(e => e.indicatorId === currentIndicator.id);
+  };
+
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>;
   if (errorMsg) return <div className="text-red-500 text-center p-12">{errorMsg}</div>;
   if (!currentIndicator) return <div className="p-12 text-center">لا توجد مؤشرات لهذه الفئة من المعلمين</div>;
@@ -427,7 +480,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                     {availableEvents.length > 0 ? (
                         availableEvents.map(evt => (
                             <option key={evt.id} value={evt.name}>
-                                {evt.name} ({new Date(evt.start_date).toLocaleDateString('ar-SA')})
+                                {evt.name} ({evt.status === 'active' ? 'نشط الآن' : new Date(evt.start_date).toLocaleDateString('ar-SA')})
                             </option>
                         ))
                     ) : (
@@ -504,7 +557,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                <th className="px-4 py-4 font-bold text-center w-[10%]">الدرجة</th>
                                <th className="px-4 py-4 font-bold text-center w-[10%]">الحالة</th>
                                <th className="px-6 py-4 font-bold text-right w-[15%]">مؤشرات التحقق</th>
-                               <th className="px-6 py-4 font-bold text-center w-[15%]">الشواهد</th>
+                               <th className="px-6 py-4 font-bold text-center w-[15%]">الشواهد المرفقة</th>
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
@@ -549,11 +602,34 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                     </ul>
                                                 </td>
                                                 <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 align-top text-center bg-gray-50/50">
-                                                    <button className="text-primary-600 text-xs flex flex-col items-center gap-2 hover:underline bg-white border border-primary-200 px-3 py-2 rounded-lg shadow-sm w-full transition-all hover:bg-primary-50">
-                                                        <UploadCloud size={20} /> 
-                                                        <span>إضافة شواهد</span>
-                                                    </button>
-                                                    <div className="mt-2 text-xs text-gray-400">لا يوجد ملفات</div>
+                                                    {getCurrentIndicatorEvidence().length > 0 ? (
+                                                        <div className="space-y-2">
+                                                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded-full mb-2 inline-block">
+                                                                يوجد {getCurrentIndicatorEvidence().length} شاهد
+                                                            </span>
+                                                            {getCurrentIndicatorEvidence().map((ev, i) => (
+                                                                <a 
+                                                                    key={i} 
+                                                                    href={ev.url} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer" 
+                                                                    className="block w-full text-left text-xs bg-white border border-blue-200 p-2 rounded hover:bg-blue-50 text-blue-700 truncate transition-colors"
+                                                                    title={ev.description}
+                                                                >
+                                                                    <div className="flex items-center gap-1 mb-1">
+                                                                        <ExternalLink size={10} />
+                                                                        <span className="font-bold">شاهد {i + 1}</span>
+                                                                    </div>
+                                                                    <span className="text-gray-500">{ev.description}</span>
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-gray-400 py-4 flex flex-col items-center gap-1">
+                                                            <FileText size={20} className="opacity-50"/>
+                                                            <span>لا يوجد شواهد من المعلم</span>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </>
                                         )}

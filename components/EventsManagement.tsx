@@ -102,8 +102,33 @@ export default function EventsManagement() {
               const { error } = await supabase.from('school_events').update(formData).eq('id', editingId);
               if (error) throw error;
           } else {
+              // 1. Create the event
               const { error } = await supabase.from('school_events').insert([formData]);
               if (error) throw error;
+
+              // 2. Auto-create evaluations if type is 'evaluation'
+              if (formData.type === 'evaluation') {
+                  const { data: teachers } = await supabase.from('teachers').select('id, school_id');
+                  if (teachers && teachers.length > 0) {
+                      const evaluationsPayload = teachers.map(t => ({
+                          teacher_id: t.id,
+                          school_id: t.school_id,
+                          period_name: formData.name,
+                          eval_date: formData.start_date, // Default to start date
+                          status: 'draft',
+                          scores: {}, // Empty scores
+                          total_score: 0
+                      }));
+                      
+                      // Bulk insert (ignore duplicates if constraint exists, but here we assume simple insert)
+                      const { error: batchError } = await supabase.from('evaluations').insert(evaluationsPayload);
+                      if (batchError) {
+                          console.warn('Auto-creation of evaluations had partial failure or constraint issue:', batchError);
+                      } else {
+                          alert(`تم إنشاء الحدث، وتم إضافة ${teachers.length} سجل تقييم (مسودة) للمعلمين تلقائياً.`);
+                      }
+                  }
+              }
           }
           await fetchEvents();
           setIsModalOpen(false);
