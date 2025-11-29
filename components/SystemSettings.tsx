@@ -877,7 +877,7 @@ create policy "Public Access" on evaluations for all using (true);
                                                 <div className="flex items-center gap-1 text-xs">
                                                     <Calendar size={12}/>
                                                     <span>{sub.start_date}</span>
-                                                    <span className="mx-1">-></span>
+                                                    <span className="mx-1">&rarr;</span>
                                                     <span>{sub.end_date}</span>
                                                 </div>
                                             </td>
