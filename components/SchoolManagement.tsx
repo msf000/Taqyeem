@@ -45,12 +45,13 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
 
       // Filter for Principal
       if (userRole === UserRole.PRINCIPAL) {
-          if (userName) {
-              // Fetch by manager name to allow multiple schools
-              query = query.eq('manager_name', userName);
-          } else if (schoolId) {
-              // Fallback to ID if name is missing (rare)
+          // Priority 1: Linked School ID (from Teacher profile or User profile)
+          if (schoolId) {
               query = query.eq('id', schoolId);
+          } 
+          // Priority 2: Fallback to Name match (Legacy)
+          else if (userName) {
+              query = query.eq('manager_name', userName);
           }
       }
 

@@ -67,11 +67,12 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         // 1. Fetch Schools
         let schoolsQuery = supabase.from('schools').select('*').order('name');
         
-        if (userRole === UserRole.PRINCIPAL && userName) {
-             schoolsQuery = schoolsQuery.eq('manager_name', userName);
-        } else if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
+        // Priority: SchoolID > ManagerName
+        if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
              // Restrict to specific school for Principal (by ID fallback) and Evaluator
              schoolsQuery = schoolsQuery.eq('id', schoolId);
+        } else if (userRole === UserRole.PRINCIPAL && userName) {
+             schoolsQuery = schoolsQuery.eq('manager_name', userName);
         }
 
         const { data: schoolsData, error: schoolsError } = await schoolsQuery;
@@ -101,6 +102,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             if (mySchoolIds.length > 0) {
                 teachersQuery = teachersQuery.in('school_id', mySchoolIds);
             } else {
+                 // No schools found for this principal, show nothing
                  teachersQuery = teachersQuery.eq('id', '00000000-0000-0000-0000-000000000000');
             }
         } else if (userRole === UserRole.EVALUATOR && schoolId) {
@@ -275,7 +277,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           console.error("Error saving teacher:", error);
           const msg = getErrorMessage(error);
           
-          if (error?.code === '23505') {
+          if (error?.code === 'PGRST204') {
+              alert("حدث خطأ في قاعدة البيانات (PGRST204): العمود 'roles' غير موجود.\n\nيرجى الذهاب إلى صفحة 'الإعدادات' > 'قاعدة البيانات' وتشغيل كود التحديث لإضافة هذا العمود.");
+          } else if (error?.code === '23505') {
               alert("رقم الهوية مسجل مسبقاً في هذه المدرسة.");
           } else {
               alert(`حدث خطأ أثناء الحفظ: ${msg}`);
