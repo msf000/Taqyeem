@@ -1,5 +1,4 @@
 
-
 export enum UserRole {
   ADMIN = 'مدير النظام',
   PRINCIPAL = 'مدير المدرسة',
@@ -12,6 +11,7 @@ export interface User {
   name: string;
   role: UserRole;
   email?: string;
+  nationalId?: string; // Added field
   schoolId?: string;
   schoolName?: string;
 }
@@ -49,7 +49,7 @@ export interface Teacher {
   name: string;
   specialty: string;
   category: TeacherCategory;
-  role?: UserRole; // Added role property
+  role?: UserRole; 
   schoolId: string;
   status: EvaluationStatus;
   mobile: string;

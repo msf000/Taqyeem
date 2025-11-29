@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw, ShieldCheck, GraduationCap, UserCheck } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
@@ -39,7 +39,7 @@ export default function App() {
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
 
   // Multi-School & User Menu State
-  const [userSchools, setUserSchools] = useState<any[]>([]);
+  const [availableProfiles, setAvailableProfiles] = useState<any[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -54,47 +54,40 @@ export default function App() {
       }
   }, []);
 
-  // Fetch multiple schools for teacher
+  // Fetch ALL schools and roles for the current user's national ID
   useEffect(() => {
-    const fetchUserSchools = async () => {
-      if (currentUser?.role === UserRole.TEACHER && currentUser.id) {
+    const fetchUserProfiles = async () => {
+      if (currentUser?.nationalId) {
         try {
-          // 1. Get National ID of current profile
-          const { data: currentProfile } = await supabase
-            .from('teachers')
-            .select('national_id')
-            .eq('id', currentUser.id)
-            .single();
-
-          if (currentProfile?.national_id) {
-            // 2. Find all profiles with same National ID
+            // Find all profiles with same National ID in 'teachers' table
             const { data: profiles } = await supabase
               .from('teachers')
-              .select('id, school_id, schools(name)')
-              .eq('national_id', currentProfile.national_id);
+              .select('id, school_id, role, name, schools(name)')
+              .eq('national_id', currentUser.nationalId);
             
-            if (profiles && profiles.length > 1) {
+            if (profiles && profiles.length > 0) {
                // Map to a cleaner format
-               const schoolsList = profiles.map((p: any) => ({
-                 teacherId: p.id, // The ID in 'teachers' table specific to this school
+               const profilesList = profiles.map((p: any) => ({
+                 teacherId: p.id, // The ID in 'teachers' table specific to this school/role
                  schoolId: p.school_id,
-                 schoolName: p.schools?.name
+                 schoolName: p.schools?.name || 'مدرسة غير محددة',
+                 role: p.role || UserRole.TEACHER,
+                 name: p.name
                }));
-               setUserSchools(schoolsList);
+               setAvailableProfiles(profilesList);
             } else {
-               setUserSchools([]);
+               setAvailableProfiles([]);
             }
-          }
         } catch (e) {
-          console.error("Error checking schools", e);
+          console.error("Error checking profiles", e);
         }
       } else {
-        setUserSchools([]);
+        setAvailableProfiles([]);
       }
     };
 
-    fetchUserSchools();
-  }, [currentUser]);
+    fetchUserProfiles();
+  }, [currentUser?.nationalId]); // Dependency on National ID
 
   // Click outside to close user menu
   useEffect(() => {
@@ -107,14 +100,16 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSwitchSchool = (targetSchool: any) => {
+  const handleSwitchProfile = (targetProfile: any) => {
       if (!currentUser) return;
 
       const newUserState: User = {
           ...currentUser,
-          id: targetSchool.teacherId, // Switch the active teacher ID
-          schoolId: targetSchool.schoolId,
-          schoolName: targetSchool.schoolName
+          id: targetProfile.teacherId, // Switch the active teacher ID
+          schoolId: targetProfile.schoolId,
+          schoolName: targetProfile.schoolName,
+          role: targetProfile.role, // Switch Role
+          name: targetProfile.name
       };
 
       setCurrentUser(newUserState);
@@ -274,6 +269,15 @@ export default function App() {
       </button>
   );
 
+  const getRoleIcon = (role: string) => {
+      switch(role) {
+          case UserRole.PRINCIPAL: return <School size={16} className="text-blue-600"/>;
+          case UserRole.EVALUATOR: return <UserCheck size={16} className="text-orange-600"/>;
+          case UserRole.ADMIN: return <ShieldCheck size={16} className="text-purple-600"/>;
+          default: return <GraduationCap size={16} className="text-gray-600"/>;
+      }
+  };
+
   return (
     <div className="min-h-screen bg-secondary-50 text-right font-sans" dir="rtl">
       {/* Top Header */}
@@ -338,52 +342,45 @@ export default function App() {
                 </button>
 
                 {showUserMenu && (
-                    <div className="absolute top-full left-0 mt-3 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in origin-top-left">
+                    <div className="absolute top-full left-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in origin-top-left">
                         {/* Header */}
                         <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
                             <p className="font-bold text-secondary-900">{currentUser.name}</p>
-                            <p className="text-xs text-secondary-500 mt-0.5">{currentUser.role}</p>
+                            <p className="text-xs text-secondary-500 mt-0.5 font-mono">{currentUser.nationalId}</p>
                         </div>
 
-                        {/* School Switcher Section */}
-                        {userSchools.length > 1 ? (
-                            <div className="py-2">
+                        {/* Profiles Switcher */}
+                        {availableProfiles.length > 0 ? (
+                            <div className="py-2 max-h-60 overflow-y-auto custom-scrollbar">
                                 <div className="px-5 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                    المدارس المرتبطة ({userSchools.length})
+                                    الحسابات المتاحة (المدارس والصلاحيات)
                                 </div>
-                                {userSchools.map(s => (
-                                    <button
-                                        key={s.teacherId}
-                                        onClick={() => handleSwitchSchool(s)}
-                                        className="w-full text-right px-5 py-3 text-sm hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between group transition-colors"
-                                    >
-                                        <span className="flex items-center gap-3">
-                                            <School size={16} className="text-gray-400 group-hover:text-primary-500"/>
-                                            <span className="font-medium">{s.schoolName}</span>
-                                        </span>
-                                        {currentUser.id === s.teacherId && <Check size={16} className="text-primary-600"/>}
-                                    </button>
-                                ))}
+                                {availableProfiles.map((profile) => {
+                                    const isActive = currentUser.id === profile.teacherId;
+                                    return (
+                                        <button
+                                            key={profile.teacherId}
+                                            onClick={() => handleSwitchProfile(profile)}
+                                            className={`w-full text-right px-5 py-3 text-sm flex items-center justify-between group transition-colors ${isActive ? 'bg-primary-50 text-primary-900' : 'hover:bg-gray-50 text-gray-700'}`}
+                                        >
+                                            <div>
+                                                <div className="font-bold flex items-center gap-2">
+                                                    {getRoleIcon(profile.role)}
+                                                    {profile.role}
+                                                </div>
+                                                <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                                                    <Building2 size={12}/> {profile.schoolName}
+                                                </div>
+                                            </div>
+                                            {isActive && <Check size={18} className="text-primary-600"/>}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         ) : (
-                            // Single School or Admin View
-                            <div className="p-2">
-                                {currentUser.schoolName && (
-                                    <div className="px-3 py-2">
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">المدرسة الحالية</div>
-                                        <div className="flex items-center gap-2 text-sm text-secondary-700 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                            <Building2 size={16} className="text-gray-400"/>
-                                            {currentUser.schoolName}
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="px-3 py-2">
-                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">الصلاحيات</div>
-                                    <div className="flex items-center gap-2 text-sm text-secondary-700 bg-green-50 p-2 rounded-lg border border-green-100 text-green-800">
-                                        <ShieldCheck size={16} />
-                                        <span>{currentUser.role}</span>
-                                    </div>
-                                </div>
+                            // Fallback for Admins without 'teachers' table link
+                            <div className="p-4 text-center text-sm text-gray-500">
+                                لا توجد حسابات أخرى مرتبطة.
                             </div>
                         )}
 

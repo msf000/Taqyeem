@@ -116,7 +116,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               const userData: User = {
                   id: t.id,
                   name: t.name,
-                  role: assignedRole, 
+                  role: assignedRole,
+                  nationalId: t.national_id, // Important for profile switching
                   schoolId: t.school_id,
                   schoolName: t.schools?.name
               };
@@ -141,6 +142,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           id: account.id,
           name: account.name,
           role: assignedRole,
+          nationalId: account.national_id, // Important
           schoolId: account.school_id,
           schoolName: account.schools?.name
       };
