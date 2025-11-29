@@ -245,7 +245,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           const msg = getErrorMessage(error);
           
           if (error?.code === '23505') {
-              alert("رقم الهوية مسجل مسبقاً");
+              alert("رقم الهوية مسجل مسبقاً في هذه المدرسة.");
           } else {
               alert(`حدث خطأ أثناء الحفظ: ${msg}`);
           }
@@ -350,7 +350,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                  results.push({ row: i + 1, nationalId, name, specialty, mobile, addedBy: 'System', status: 'success' });
             } catch (err: any) {
                 let msg = 'خطأ في الحفظ';
-                if (err.code === '23505') msg = 'رقم الهوية مكرر';
+                if (err.code === '23505') msg = 'رقم الهوية مكرر في هذه المدرسة';
                 else msg = getErrorMessage(err);
                 results.push({ row: i + 1, nationalId, name, specialty, mobile, addedBy: '-', status: 'failed', message: msg });
             }

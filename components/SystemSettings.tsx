@@ -56,10 +56,22 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script - Updated with teacher_evidence table
+  // SQL Script - Updated to fix unique constraint on national_id
   const fullSchemaScript = `
 -- ==========================================
--- 1. إصلاح مشاكل الحذف (Constraints Fixes)
+-- 1. إصلاح تعدد المدارس (Multi-School Fix)
+-- ==========================================
+
+-- إزالة القيد الذي يمنع تكرار رقم الهوية في النظام بالكامل
+ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_national_id_key;
+
+-- إضافة قيد جديد يمنع تكرار رقم الهوية في "نفس المدرسة" فقط
+-- هذا يسمح للمعلم بالتسجيل في مدرسة أ ومدرسة ب بنفس الهوية
+CREATE UNIQUE INDEX IF NOT EXISTS idx_teachers_national_id_school_id 
+ON teachers (national_id, school_id);
+
+-- ==========================================
+-- 2. إصلاح مشاكل الحذف (Constraints Fixes)
 -- ==========================================
 
 -- إصلاح علاقة التقييمات بالمعلمين (حذف التقييم عند حذف المعلم)
@@ -88,7 +100,7 @@ ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_school_id_fkey
     FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
 
 -- ==========================================
--- 2. التأكد من هيكلية الجداول
+-- 3. التأكد من هيكلية الجداول
 -- ==========================================
 
 create table if not exists schools (
@@ -105,7 +117,7 @@ create table if not exists schools (
 create table if not exists teachers (
   id uuid default gen_random_uuid() primary key,
   name text not null,
-  national_id text unique,
+  national_id text, -- Removed UNIQUE constraint here to allow multi-school
   specialty text,
   category text, 
   role text default 'المعلم',
@@ -216,7 +228,7 @@ ALTER TABLE teachers ADD COLUMN IF NOT EXISTS role text default 'المعلم';
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
--- 3. تحديث سياسات الأمان (RLS) - مع الحذف أولاً
+-- 4. تحديث سياسات الأمان (RLS)
 -- ==========================================
 
 -- Schools
@@ -990,7 +1002,7 @@ create policy "Public Access" on teacher_evidence for all using (true);
                         <div className="flex-1">
                             <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات وإصلاح القيود</h2>
                             <p className="text-gray-500 mb-4 text-sm leading-relaxed">
-                                يحتوي السكربت أدناه على جميع الجداول اللازمة، بما في ذلك جدول <strong>الشواهد المستقل (teacher_evidence)</strong>، بالإضافة إلى أوامر إصلاح علاقات الحذف.
+                                يحتوي السكربت أدناه على جميع الجداول اللازمة، بما في ذلك <strong>إصلاح مشكلة تكرار رقم الهوية (للسماح بالعمل في مدارس متعددة)</strong>.
                             </p>
                             
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -998,7 +1010,7 @@ create policy "Public Access" on teacher_evidence for all using (true);
                                     <AlertTriangle size={16} /> تنبيه هام جداً
                                 </h4>
                                 <p className="text-xs text-blue-800">
-                                    إذا كنت تواجه مشكلة "لا يمكن الحذف" أو خطأ "Policy already exists"، يرجى نسخ هذا الكود بالكامل وتشغيله في محرر SQL في Supabase. 
+                                    لتفعيل ميزة "معلم في مدارس متعددة"، يجب نسخ هذا الكود وتشغيله في Supabase SQL Editor. سيقوم الكود بإلغاء قيد "الهوية الفريدة" العام واستبداله بقيد "هوية فريدة لكل مدرسة".
                                 </p>
                             </div>
 
