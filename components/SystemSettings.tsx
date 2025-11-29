@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson } from 'lucide-react';
 import { supabase } from '../supabaseClient';
@@ -877,7 +876,7 @@ create policy "Public Access" on evaluations for all using (true);
                                                 <div className="flex items-center gap-1 text-xs">
                                                     <Calendar size={12}/>
                                                     <span>{sub.start_date}</span>
-                                                    <span className="mx-1">&rarr;</span>
+                                                    <span className="mx-1">→</span>
                                                     <span>{sub.end_date}</span>
                                                 </div>
                                             </td>
