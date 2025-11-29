@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar, Link as LinkIcon, ExternalLink, FileText } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar, Link as LinkIcon, ExternalLink, FileText, Square, CheckSquare, Lightbulb } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
@@ -18,6 +18,10 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
+  // UI States
+  const scoreInputRef = useRef<HTMLInputElement>(null);
+  const [showNotes, setShowNotes] = useState(false);
+
   // Data State
   const [currentEvalId, setCurrentEvalId] = useState<string | null>(evaluationId || null);
   // Date is kept internally for DB but not shown/edited by user
@@ -49,20 +53,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   // Robust Helper for error messages
   const getErrorMessage = (error: any): string => {
     if (!error) return 'حدث خطأ غير معروف';
-    
-    // Check specific properties first (Supabase/Postgres errors) - Ensure they are strings
     if (error?.message && typeof error.message === 'string') return error.message;
     if (error?.error_description && typeof error.error_description === 'string') return error.error_description;
     if (error?.details && typeof error.details === 'string') return error.details;
     if (error?.hint && typeof error.hint === 'string') return error.hint;
-    
-    // Standard JS Error
     if (error instanceof Error) return error.message;
-    
-    // String error
     if (typeof error === 'string') return error;
-    
-    // Try to stringify if object
     try {
         const str = JSON.stringify(error);
         if (str === '{}' || str === '[]') return 'خطأ غير محدد في النظام';
@@ -150,21 +146,16 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             
             if (!evError && eventsData) {
                 setAvailableEvents(eventsData);
-                
-                // AUTO-SELECT LOGIC:
-                // If it's a NEW evaluation (no ID) AND we have an active event, select it.
                 if (!currentEvalId && !evaluationId) {
                     const activeEvent = eventsData.find((e: any) => e.status === 'active');
                     if (activeEvent) {
                         setPeriod(prev => ({ ...prev, name: activeEvent.name }));
                     } else if (eventsData.length > 0) {
-                        // Fallback to first upcoming if no active
                         setPeriod(prev => ({ ...prev, name: eventsData[0].name }));
                     }
                 }
             }
         } catch (e) {
-            // Ignore if table doesn't exist, we fallback to default list
             console.log('Events table might not exist yet or empty');
         }
 
@@ -192,17 +183,9 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
         let evalQuery = supabase.from('evaluations').select('*');
         
         if (currentEvalId) {
-            // If explicit ID provided (Editing)
             evalQuery = evalQuery.eq('id', currentEvalId);
         } else {
-            // Default logic: Find most recent draft or completed for this teacher
-            // This part might be skipped if we want to force new evaluation when no ID passed
-            // But if we want to "resume" the latest draft, keep it.
-            // However, typically onEvaluate() without ID means "New".
             if (!evaluationId) {
-                 // Check if there is already a draft for the *Active* period? 
-                 // For now, let's just create new if ID is missing to avoid confusion.
-                 // So we skip fetching if no ID is provided.
             } else {
                  evalQuery = evalQuery.eq('id', evaluationId);
             }
@@ -223,7 +206,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             }
         }
       } catch (error: any) {
-        // If no rows found (PGRST116), it's fine, we start fresh.
         if (error.code !== 'PGRST116') {
             console.error('Error fetching data:', error);
             setErrorMsg(getErrorMessage(error));
@@ -236,9 +218,8 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     fetchAllData();
   }, [teacherId, evaluationId]);
 
-  // Centralized Save Function - Returns Success Boolean
+  // Centralized Save Function
   const saveToDb = useCallback(async (isManual = false): Promise<boolean> => {
-      // Don't save if basic data isn't ready
       if (!teacherId || !period.name) {
           if (isManual) alert("يرجى تحديد فترة التقييم قبل الحفظ");
           return false;
@@ -250,15 +231,13 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             teacher_id: teacherId,
             school_id: teacherDetails.schoolId || null, 
             period_name: period.name,
-            eval_date: period.date, // We save the internal date
+            eval_date: period.date,
             scores: scores,
             general_notes: generalNotes,
             total_score: calculateTotal(),
             status: Object.keys(scores).length === indicators.length && indicators.length > 0 ? 'completed' : 'draft',
-            // No need to save evidence here anymore, as it's in a separate table
         };
 
-        // If we have an ID, update. Else insert.
         let query;
         if (currentEvalId) {
              query = supabase.from('evaluations').update(payload).eq('id', currentEvalId).select('id');
@@ -267,27 +246,17 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
         }
 
         const { data, error } = await query;
-
         if (error) throw error;
         
         if (data && data[0]) {
-            setCurrentEvalId(data[0].id); // Capture new ID if we just inserted
+            setCurrentEvalId(data[0].id);
         }
         setSaveStatus('saved');
         return true;
       } catch (error: any) {
         console.error('Error saving:', error);
         setSaveStatus('error');
-        
-        const msg = getErrorMessage(error);
-        if (isManual) {
-            // Check specifically for missing column error
-            if (msg.includes('column') && msg.includes('does not exist')) {
-                 alert('فشل الحفظ: قاعدة البيانات تحتاج إلى تحديث.\nيرجى الذهاب إلى الإعدادات > قاعدة البيانات، ونسخ كود التحديث وتشغيله في Supabase.');
-            } else {
-                 alert('فشل الحفظ: ' + msg);
-            }
-        }
+        if (isManual) alert('فشل الحفظ: ' + getErrorMessage(error));
         return false;
       }
   }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId]);
@@ -295,11 +264,9 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   // Auto-Save Effect
   useEffect(() => {
     if (isLoading || indicators.length === 0) return; 
-
     const timeoutId = setTimeout(() => {
         if (period.name) saveToDb(false);
     }, 1500); 
-
     return () => clearTimeout(timeoutId);
   }, [saveToDb, isLoading, indicators.length]);
 
@@ -308,7 +275,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
           alert('يرجى اختيار الفترة');
           return;
       }
-      // Force initial save to create the record ID
       const success = await saveToDb(true);
       if (success) {
           setStep('scoring');
@@ -322,7 +288,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       }
   };
 
-  // Helpers
   const currentIndicator = indicators[currentIndicatorIndex];
   
   const currentScore: EvaluationScore = (currentIndicator && scores[currentIndicator.id]) || { 
@@ -335,6 +300,26 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     isComplete: false 
   };
 
+  // --- Auto Focus & Notes Toggle Logic ---
+  useEffect(() => {
+      if (step === 'scoring' && scoreInputRef.current) {
+          // Add a small delay to ensure DOM is ready
+          setTimeout(() => {
+              if (scoreInputRef.current) {
+                  scoreInputRef.current.focus();
+                  scoreInputRef.current.select(); // Highlight value for quick edit
+              }
+          }, 50);
+      }
+      
+      // Auto-set the note toggle if there are already notes saved
+      if (currentIndicator) {
+          const hasNotes = !!scores[currentIndicator.id]?.notes;
+          setShowNotes(hasNotes);
+      }
+  }, [currentIndicatorIndex, step]);
+
+  // --- Updated Mastery Level (From Image) ---
   const getRubricLevel = (score: number, max: number) => {
     if (score === 0) return 0;
     const percentage = (score / max) * 100;
@@ -348,13 +333,14 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const getMasteryLevel = (score: number, max: number) => {
     if (score === 0) return "--";
     const percentage = (score / max) * 100;
-    if (percentage >= 90) return "متميز";
-    if (percentage >= 80) return "متقدم";
-    if (percentage >= 70) return "متمكن";
-    if (percentage >= 50) return "مبتدئ";
-    return "غير مجتاز";
+    if (percentage >= 90) return "مثالي";
+    if (percentage >= 80) return "تخطى التوقعات";
+    if (percentage >= 70) return "وافق التوقعات";
+    if (percentage >= 50) return "بحاجة إلى تطوير";
+    return "غير مرضي";
   };
 
+  // --- Smart Improvement Logic ---
   const updateScore = (valueStr: string) => {
     if (!currentIndicator) return;
     let val = parseFloat(valueStr);
@@ -365,21 +351,35 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     if (val > maxVal) val = maxVal;
 
     const rubricLevel = getRubricLevel(val, maxVal);
-
-    // Auto improvement text logic
-    let autoImprovement = "الاستمرار في تحسين الأداء.";
     const percentage = (val / maxVal) * 100;
-    if (percentage >= 90) autoImprovement = "توثيق المبادرات ونشرها كنموذج يحتذى به.";
-    else if (percentage >= 80) autoImprovement = "العمل على ابتكار مبادرات نوعية تتجاوز التطبيق الأساسي.";
-    else if (percentage >= 70) autoImprovement = "التركيز على الالتزام بتطبيق المعايير الأساسية بشكل منتظم.";
-    else if (percentage >= 50) autoImprovement = "يحتاج إلى خطة علاجية عاجلة لفهم وتطبيق أساسيات المعيار.";
-    else autoImprovement = "أداء غير مرضي يتطلب تدخلاً فورياً.";
+    
+    // Comprehensive Logic based on Indicator Text and Criteria
+    let autoImprovement = "";
+    const indicatorName = currentIndicator.text;
+    const criteria = currentIndicator.evaluationCriteria;
+
+    if (percentage < 50) {
+        // Unsatisfactory
+        autoImprovement = `الأداء غير مرضي في "${indicatorName}". يتطلب بناء خطة علاجية عاجلة. يرجى التركيز على تطبيق الأساسيات: ${criteria[0] || 'المعايير الأساسية'}، والعمل مع المشرف لتجاوز التعثر.`;
+    } else if (percentage < 70) {
+        // Needs Improvement
+        autoImprovement = `الأداء بحاجة إلى تطوير في "${indicatorName}". لرفع المستوى إلى "وافق التوقعات"، يرجى تحسين: ${criteria[1] || criteria[0] || 'آليات التنفيذ'}، والحرص على الاستمرارية.`;
+    } else if (percentage < 80) {
+        // Met Expectations
+        autoImprovement = `الأداء وافق التوقعات في "${indicatorName}". للوصول لمرحلة "تخطى التوقعات"، يُنصح بالتركيز على جودة المخرجات في: ${criteria.length > 2 ? criteria[2] : 'قياس الأثر'}.`;
+    } else if (percentage < 90) {
+        // Exceeded Expectations
+        autoImprovement = `أداء رائع تخطى التوقعات في "${indicatorName}". الخطوة القادمة للوصول للمثالية هي الابتكار في ${criteria[0] || 'التطبيق'} ونقل الخبرة للزملاء.`;
+    } else {
+        // Ideal
+        autoImprovement = `أداء مثالي ونموذجي في "${indicatorName}". يوصى بتوثيق هذه الممارسات المتميزة ونشرها كنموذج يحتذى به في المدرسة.`;
+    }
 
     const newScore = {
        ...currentScore,
        score: val, 
        level: rubricLevel,
-       isComplete: val > 0, // Considered complete if score entered
+       isComplete: val > 0,
        improvement: autoImprovement
     };
     
@@ -404,7 +404,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     return (Object.values(scores) as EvaluationScore[]).reduce((acc: number, curr: EvaluationScore) => acc + (curr.score || 0), 0);
   };
 
-  // --- Render Evidence Logic ---
   const getCurrentIndicatorEvidence = () => {
       if (!currentIndicator) return [];
       return teacherEvidenceLinks.filter(e => e.indicatorId === currentIndicator.id);
@@ -471,8 +470,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                     value={period.name}
                     onChange={(e) => {
                         const newName = e.target.value;
-                        // Auto-set internal date based on selected event if possible, or keep current
-                        // We rely on "Today" for the eval_date unless we want to backdate to event start
                         setPeriod({...period, name: newName });
                     }}
                  >
@@ -492,11 +489,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                         </>
                     )}
                  </select>
-                 {availableEvents.length === 0 && (
-                     <p className="text-xs text-gray-400 mt-2">
-                        ملاحظة: لا توجد أحداث تقييم نشطة معرفة في النظام. تظهر القائمة الافتراضية.
-                     </p>
-                 )}
               </div>
            </div>
            <div className="flex justify-end">
@@ -561,7 +553,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
-                            {/* Rows based on Criteria, but Score cols are RowSpanned */}
                             {currentIndicator.evaluationCriteria.length === 0 ? (
                                 <tr><td colSpan={6} className="p-4 text-center">لا توجد معايير</td></tr>
                             ) : (
@@ -570,8 +561,6 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                         <td className="px-6 py-3 text-sm text-gray-700 leading-relaxed border-r border-gray-100">
                                             • {criteriaText}
                                         </td>
-
-                                        {/* RowSpanned Columns (Only render for first row) */}
                                         {idx === 0 && (
                                             <>
                                                 <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center text-gray-500 font-bold border-l border-r border-gray-100 align-top bg-gray-50/50">
@@ -579,6 +568,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                 </td>
                                                 <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center border-r border-gray-100 align-top bg-white">
                                                     <input 
+                                                        ref={scoreInputRef}
                                                         type="number"
                                                         min="0"
                                                         max={currentIndicator.weight}
@@ -587,6 +577,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                         value={currentScore.score || ''}
                                                         onChange={(e) => updateScore(e.target.value)}
                                                         placeholder="0"
+                                                        onFocus={(e) => e.target.select()}
                                                     />
                                                 </td>
                                                 <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center border-r border-gray-100 align-top bg-gray-50/50">
@@ -661,24 +652,35 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                               </div>
                           </div>
                           <div>
-                              <label className="block text-xs font-bold text-gray-500 mb-2">فرص التحسين (آلي)</label>
-                              <div className="w-full border rounded-lg p-4 bg-white text-sm text-gray-700 min-h-[100px] shadow-sm flex items-start">
-                                 {currentScore.improvement || '---'}
+                              <label className="block text-xs font-bold text-gray-500 mb-2 flex items-center gap-1"><Lightbulb size={12} className="text-yellow-500"/> فرص التحسين (مقترحة بناءً على المعايير)</label>
+                              <div className="w-full border rounded-lg p-4 bg-white text-sm text-gray-700 min-h-[100px] shadow-sm flex items-start leading-relaxed">
+                                 {currentScore.improvement || 'أدخل الدرجة لعرض مقترحات التحسين...'}
                               </div>
                           </div>
                       </div>
                       
-                      <div>
-                          <label className="block text-xs font-bold text-gray-500 mb-2">
-                             ملاحظات إضافية على المؤشر (اختياري)
+                      <div className="mt-6 border-t border-gray-200 pt-4">
+                          <label className="flex items-center gap-3 cursor-pointer w-fit select-none">
+                              <div 
+                                  className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${showNotes ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-gray-300'}`}
+                                  onClick={() => setShowNotes(!showNotes)}
+                              >
+                                  {showNotes && <CheckCircle2 size={16} />}
+                              </div>
+                              <span className="text-sm font-bold text-gray-700" onClick={() => setShowNotes(!showNotes)}>إرفاق ملاحظات المقيم على هذا المؤشر (اختياري)</span>
                           </label>
-                          <textarea 
-                              rows={2} 
-                              className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white shadow-sm"
-                              placeholder="أضف ملاحظاتك هنا..."
-                              value={currentScore.notes}
-                              onChange={(e) => updateField('notes', e.target.value)}
-                          />
+
+                          {showNotes && (
+                              <div className="animate-fade-in mt-4">
+                                  <textarea 
+                                      rows={2} 
+                                      className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white shadow-sm"
+                                      placeholder="أضف ملاحظاتك التفصيلية هنا حول هذا المؤشر..."
+                                      value={currentScore.notes}
+                                      onChange={(e) => updateField('notes', e.target.value)}
+                                  />
+                              </div>
+                          )}
                       </div>
                   </div>
 
