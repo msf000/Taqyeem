@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History } from 'lucide-react';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 import readXlsxFile from 'read-excel-file';
@@ -34,7 +34,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   const [filterStatus, setFilterStatus] = useState('');
 
   // Add Teacher Form State
-  const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ category: TeacherCategory.TEACHER });
+  const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
   const [isSaving, setIsSaving] = useState(false);
 
   // Import Logic State
@@ -124,6 +124,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 nationalId: t.national_id,
                 specialty: t.specialty,
                 category: t.category as TeacherCategory,
+                role: (t.role as UserRole) || UserRole.TEACHER,
                 mobile: t.mobile,
                 schoolId: t.school_id,
                 status: status
@@ -151,6 +152,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           nationalId: teacher.nationalId,
           specialty: teacher.specialty,
           category: teacher.category,
+          role: teacher.role,
           mobile: teacher.mobile,
           schoolId: teacher.schoolId
       });
@@ -221,6 +223,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
               national_id: newTeacher.nationalId,
               specialty: newTeacher.specialty,
               category: newTeacher.category,
+              role: newTeacher.role,
               mobile: newTeacher.mobile,
               school_id: targetSchoolId
           };
@@ -235,7 +238,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
           await fetchData();
           setSubTab('list');
-          setNewTeacher({ category: TeacherCategory.TEACHER });
+          setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
           setEditingId(null);
       } catch (error: any) {
           console.error("Error saving teacher:", error);
@@ -253,7 +256,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
   const handleCancelEdit = () => {
       setSubTab('list');
-      setNewTeacher({ category: TeacherCategory.TEACHER });
+      setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
       setEditingId(null);
   };
 
@@ -339,6 +342,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                      specialty: specialty, 
                      mobile: mobile, 
                      category: TeacherCategory.TEACHER, 
+                     role: UserRole.TEACHER,
                      school_id: importTargetSchoolId 
                  }]);
                  
@@ -423,7 +427,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     <div className="space-y-6">
       <div className="flex border-b border-gray-200 gap-6">
         <button onClick={() => { setSubTab('list'); setEditingId(null); }} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
-        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER }); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
             {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
         </button>
         <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
@@ -456,6 +460,10 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                 <div className="bg-gray-50 p-3 rounded-lg">
                                     <label className="text-xs text-gray-500 block mb-1">التخصص</label>
                                     <p className="font-medium">{viewTeacher.specialty}</p>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded-lg">
+                                    <label className="text-xs text-gray-500 block mb-1">الصلاحية</label>
+                                    <p className="font-medium">{viewTeacher.role || UserRole.TEACHER}</p>
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg">
                                     <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
@@ -539,9 +547,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                             <th className="px-6 py-4">الاسم الكامل</th>
                             <th className="px-6 py-4">رقم الهوية</th>
                             <th className="px-6 py-4">فئة المعلم</th>
+                            <th className="px-6 py-4">الصلاحية</th>
                             <th className="px-6 py-4">التخصص</th>
                             <th className="px-6 py-4">المدرسة</th>
-                            <th className="px-6 py-4">الحالة</th>
                             <th className="px-6 py-4 text-center">الإجراءات</th>
                         </tr>
                     </thead>
@@ -563,9 +571,15 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                         <td className="px-6 py-4 text-sm">
                                             <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs border border-blue-100">{teacher.category}</span>
                                         </td>
+                                        <td className="px-6 py-4 text-sm">
+                                            {teacher.role && teacher.role !== UserRole.TEACHER ? (
+                                                <span className="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs border border-purple-100 font-bold">{teacher.role}</span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">معلم</span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
                                         <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
-                                        <td className="px-6 py-4">{renderStatus(teacher.status)}</td>
                                         <td className="px-6 py-4 flex justify-center items-center gap-2">
                                             {onViewHistory ? (
                                                 <button 
@@ -637,6 +651,24 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.name || ''} onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-mono text-left" dir="ltr" placeholder="10xxxxxxxx" value={newTeacher.nationalId || ''} onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label><select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.category} onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}>{Object.values(TeacherCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                 
+                 {/* Role Selection */}
+                 <div className="md:col-span-2 bg-purple-50 p-4 rounded-xl border border-purple-100">
+                     <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">
+                         <Shield size={16}/> صلاحيات النظام (System Role)
+                     </label>
+                     <p className="text-xs text-gray-500 mb-3">تحدد هذه الصلاحية مستوى وصول المعلم للنظام (مثل: القدرة على تقييم الآخرين).</p>
+                     <select 
+                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 bg-white"
+                        value={newTeacher.role || UserRole.TEACHER}
+                        onChange={(e) => setNewTeacher({...newTeacher, role: e.target.value as UserRole})}
+                     >
+                         <option value={UserRole.TEACHER}>معلم (صلاحية افتراضية)</option>
+                         <option value={UserRole.EVALUATOR}>مقيم (يمكنه تقييم المعلمين)</option>
+                         <option value={UserRole.PRINCIPAL}>مدير مدرسة (صلاحية كاملة على المدرسة)</option>
+                     </select>
+                 </div>
+
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label><input type="tel" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-left" dir="ltr" value={newTeacher.mobile || ''} onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})} /></div>
             </div>
@@ -651,7 +683,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                 if (success) {
                                     setSubTab('list');
                                     setEditingId(null);
-                                    setNewTeacher({ category: TeacherCategory.TEACHER });
+                                    setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
                                 }
                             }} 
                             className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 transition-colors"

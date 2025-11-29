@@ -110,10 +110,13 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           if (teachers.length === 1) {
               // Only one school found, login directly
               const t = teachers[0];
+              // Use assigned role or default to Teacher
+              const assignedRole = (t.role as UserRole) || UserRole.TEACHER;
+              
               const userData: User = {
                   id: t.id,
                   name: t.name,
-                  role: UserRole.TEACHER,
+                  role: assignedRole, 
                   schoolId: t.school_id,
                   schoolName: t.schools?.name
               };
@@ -133,10 +136,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   };
 
   const selectTeacherAccount = (account: any) => {
+      const assignedRole = (account.role as UserRole) || UserRole.TEACHER;
       const userData: User = {
           id: account.id,
           name: account.name,
-          role: UserRole.TEACHER,
+          role: assignedRole,
           schoolId: account.school_id,
           schoolName: account.schools?.name
       };
@@ -179,7 +183,12 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                                   <Building size={20} className="text-secondary-500 group-hover:text-primary-600"/>
                               </div>
                               <div>
-                                  <h4 className="font-bold text-secondary-800 group-hover:text-primary-900 text-base">{acc.schools?.name || 'مدرسة غير معروفة'}</h4>
+                                  <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-secondary-800 group-hover:text-primary-900 text-base">{acc.schools?.name || 'مدرسة غير معروفة'}</h4>
+                                      {acc.role && acc.role !== UserRole.TEACHER && (
+                                          <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">{acc.role}</span>
+                                      )}
+                                  </div>
                                   <span className="text-xs text-secondary-500 group-hover:text-primary-700">التخصص: {acc.specialty}</span>
                               </div>
                               <ArrowRight size={18} className="mr-auto text-secondary-300 group-hover:text-primary-500"/>

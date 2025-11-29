@@ -108,6 +108,7 @@ create table if not exists teachers (
   national_id text unique,
   specialty text,
   category text, 
+  role text default 'المعلم',
   mobile text,
   password text,
   school_id uuid references schools(id) on delete set null,
@@ -211,6 +212,7 @@ ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_text text;
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default 'none';
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text;
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS role text default 'المعلم';
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
