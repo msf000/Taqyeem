@@ -106,11 +106,12 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         const { data: teachersData, error: teachersError } = await teachersQuery;
         if (teachersError) throw teachersError;
 
-        const { data: evalsData } = await supabase.from('evaluations').select('teacher_id, status');
+        const { data: evalsData } = await supabase.from('evaluations').select('teacher_id, status').order('created_at', { ascending: false });
         const { data: specData } = await supabase.from('specialties').select('*').order('name');
         setSpecialtiesList(specData || []);
 
         const mappedTeachers: Teacher[] = (teachersData || []).map((t: any) => {
+            // Find LATEST evaluation
             const evalRecord = evalsData?.find((e: any) => e.teacher_id === t.id);
             let status = EvaluationStatus.NOT_EVALUATED;
             if (evalRecord) {
@@ -391,11 +392,11 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   const renderStatus = (status: EvaluationStatus) => {
     switch (status) {
         case EvaluationStatus.COMPLETED:
-            return <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">مقيم</span>;
+            return <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold border border-green-200">مكتمل</span>;
         case EvaluationStatus.DRAFT:
-            return <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full font-medium">مسودة</span>;
+            return <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded-full font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
         default:
-            return <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full font-medium">لم يتم التقييم</span>;
+            return <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full font-medium">بانتظار التقييم</span>;
     }
   };
 
@@ -516,8 +517,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                         <select className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[130px]" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                             <option value="">حالة التقييم</option>
                             <option value={EvaluationStatus.NOT_EVALUATED}>لم يتم التقييم</option>
-                            <option value={EvaluationStatus.DRAFT}>مسودة</option>
-                            <option value={EvaluationStatus.COMPLETED}>مقيم</option>
+                            <option value={EvaluationStatus.DRAFT}>مسودة (جاري)</option>
+                            <option value={EvaluationStatus.COMPLETED}>مكتمل</option>
                         </select>
                         {hasActiveFilters && (
                             <button onClick={clearFilters} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-sm flex items-center gap-1 transition-colors whitespace-nowrap"><X size={16} /> مسح</button>

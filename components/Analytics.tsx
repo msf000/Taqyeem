@@ -90,7 +90,7 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
             // Step 2: Fetch Evaluations (Numerator & Data)
             let evalsQuery = supabase
                 .from('evaluations')
-                .select('teacher_id, total_score, scores, period_name, school_id');
+                .select('teacher_id, total_score, scores, period_name, school_id, status');
             
             // Filter by School (via Teacher IDs relation)
             if (teacherIds !== null) {
@@ -98,7 +98,6 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
                     evalsQuery = evalsQuery.in('teacher_id', teacherIds);
                 } else {
                     // School has no teachers, so force empty result
-                    // Using a dummy ID to return 0 rows
                     evalsQuery = evalsQuery.eq('teacher_id', '00000000-0000-0000-0000-000000000000'); 
                 }
             }
@@ -111,10 +110,16 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
 
             // Step 3: Calculation Logic
             // Count UNIQUE teachers evaluated. 
-            const uniqueEvaluatedTeachers = new Set(evaluations?.map((e: any) => e.teacher_id)).size;
+            // STRICT RULE: Only count evaluations with status === 'completed' as "Evaluated".
+            // Drafts are effectively "Pending".
+            
+            const completedEvaluations = evaluations?.filter((e: any) => e.status === 'completed') || [];
+            const uniqueEvaluatedTeachers = new Set(completedEvaluations.map((e: any) => e.teacher_id)).size;
+            
             const evaluatedCount = uniqueEvaluatedTeachers;
             
-            // Pending = Total Pool - Evaluated
+            // Pending = Total Pool - Evaluated (Completed)
+            // Note: This inherently includes those with "Draft" status as Pending.
             const pendingCount = Math.max(0, totalTeachersCount - evaluatedCount);
 
             // Step 4: Process Status Distribution (Pie Chart)
@@ -122,19 +127,17 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
             let totalScoreSum = 0;
             let validScoreCount = 0;
 
-            evaluations?.forEach((ev: any) => {
+            // Only analyze scores from COMPLETED evaluations
+            completedEvaluations.forEach((ev: any) => {
                 const score = ev.total_score || 0;
-                // Only count score in average if it's > 0 (avoid drafts with 0 score skewing average)
-                if (score > 0) {
-                    totalScoreSum += score;
-                    validScoreCount++;
-                    
-                    if (score >= 90) levels['متميز']++;
-                    else if (score >= 80) levels['متقدم']++;
-                    else if (score >= 70) levels['متمكن']++;
-                    else if (score >= 50) levels['مبتدئ']++;
-                    else levels['غير مجتاز']++;
-                }
+                totalScoreSum += score;
+                validScoreCount++;
+                
+                if (score >= 90) levels['متميز']++;
+                else if (score >= 80) levels['متقدم']++;
+                else if (score >= 70) levels['متمكن']++;
+                else if (score >= 50) levels['مبتدئ']++;
+                else levels['غير مجتاز']++;
             });
 
             const processedStatusData = Object.entries(levels)
@@ -147,7 +150,8 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
             const { data: indicators } = await supabase.from('evaluation_indicators').select('id, text');
             const indicatorMap = new Map(indicators?.map((i: any) => [i.id, i.text]));
 
-            evaluations?.forEach((ev: any) => {
+            // Only analyze scores from COMPLETED evaluations
+            completedEvaluations.forEach((ev: any) => {
                 const scoresMap = ev.scores;
                 if (scoresMap) {
                     Object.values(scoresMap).forEach((s: any) => {
@@ -262,21 +266,21 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
                     <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-4 -mt-4 z-0 group-hover:bg-green-100 transition-colors"></div>
                     <CheckCircle2 className="text-green-500 mb-2 z-10" size={24}/>
                     <div className="text-3xl font-bold text-green-600 z-10">{summary.evaluated}</div>
-                    <span className="text-gray-500 text-sm z-10">تم تقييمهم {selectedPeriod ? `(${selectedPeriod})` : ''}</span>
+                    <span className="text-gray-500 text-sm z-10">تقييمات مكتملة</span>
                 </div>
 
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col items-center justify-center relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-50 rounded-bl-full -mr-4 -mt-4 z-0 group-hover:bg-yellow-100 transition-colors"></div>
                     <Clock className="text-yellow-500 mb-2 z-10" size={24}/>
                     <div className="text-3xl font-bold text-yellow-500 z-10">{summary.pending}</div>
-                    <span className="text-gray-500 text-sm z-10">بانتظار التقييم</span>
+                    <span className="text-gray-500 text-sm z-10">بانتظار التقييم (مسودات/جديد)</span>
                 </div>
 
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col items-center justify-center relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-purple-50 rounded-bl-full -mr-4 -mt-4 z-0 group-hover:bg-purple-100 transition-colors"></div>
                     <BarChart2 className="text-purple-500 mb-2 z-10" size={24}/>
                     <div className="text-3xl font-bold text-purple-600 z-10">{summary.average}%</div>
-                    <span className="text-gray-500 text-sm z-10">متوسط الأداء العام</span>
+                    <span className="text-gray-500 text-sm z-10">متوسط الأداء المعتمد</span>
                 </div>
             </div>
 
@@ -340,7 +344,7 @@ export default function Analytics({ userRole, schoolId }: AnalyticsProps) {
                         ) : (
                             <div className="h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg">
                                 <PieChartIcon size={40} className="mb-2 opacity-50" />
-                                <p>لا توجد تقييمات لعرض التوزيع</p>
+                                <p>لا توجد تقييمات مكتملة لعرض التوزيع</p>
                             </div>
                         )}
                     </div>

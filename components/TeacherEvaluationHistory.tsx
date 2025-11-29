@@ -123,8 +123,8 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold">مسودة</span>;
+          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">مكتمل</span>;
+          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
           case 'archived': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">مؤرشف</span>;
           default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">{status}</span>;
       }

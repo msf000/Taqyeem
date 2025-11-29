@@ -283,8 +283,8 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold">مسودة</span>;
+          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">مكتمل</span>;
+          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
           default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">{status}</span>;
       }
   };
@@ -445,7 +445,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                         <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg text-lg font-bold">
                                             {getMasteryLevel(calculateTotal())}
                                         </div>
-                                        <p className="text-xs mt-2 opacity-80">{evaluation?.status === EvaluationStatus.COMPLETED ? 'تم الاعتماد' : 'مسودة (غير معتمد)'}</p>
+                                        <p className="text-xs mt-2 opacity-80">{evaluation?.status === EvaluationStatus.COMPLETED ? 'تم الاعتماد' : 'جاري التقييم (غير معتمد)'}</p>
                                     </div>
                                 </div>
                             </div>
