@@ -56,19 +56,32 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script - Updated to fix unique constraint on national_id
+  // SQL Script - Updated to use ARRAY for roles to allow single record with multiple roles
   const fullSchemaScript = `
 -- ==========================================
--- 1. إصلاح تعدد المدارس (Multi-School Fix)
+-- 1. تحديث هيكلية تعدد الصلاحيات (سجل واحد، أدوار متعددة)
 -- ==========================================
 
--- إزالة القيد الذي يمنع تكرار رقم الهوية في النظام بالكامل
-ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_national_id_key;
+-- إضافة عمود المصفوفة للأدوار في جدول المعلمين إذا لم يكن موجوداً
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] DEFAULT '{}';
 
--- إضافة قيد جديد يمنع تكرار رقم الهوية في "نفس المدرسة" فقط
--- هذا يسمح للمعلم بالتسجيل في مدرسة أ ومدرسة ب بنفس الهوية
+-- نقل البيانات القديمة (role وحيد) إلى المصفوفة الجديدة
+UPDATE teachers 
+SET roles = array_append(roles, role) 
+WHERE role IS NOT NULL AND (roles IS NULL OR roles = '{}' OR NOT (roles @> ARRAY[role]));
+
+-- إعادة قيد التفرد: رقم الهوية يجب أن يكون فريداً لكل مدرسة (سجل واحد فقط لكل معلم في المدرسة)
+ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_national_id_key;
+DROP INDEX IF EXISTS idx_teachers_national_id_school_id_role; 
+DROP INDEX IF EXISTS idx_teachers_national_id_school_id;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_teachers_national_id_school_id 
 ON teachers (national_id, school_id);
+
+-- للمستخدمين (المدراء): إبقاء الوضع كما هو (بريد فريد للمدرسة)
+ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_email_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_email_school_id 
+ON app_users (email, school_id);
 
 -- ==========================================
 -- 2. إصلاح مشاكل الحذف (Constraints Fixes)
@@ -117,10 +130,11 @@ create table if not exists schools (
 create table if not exists teachers (
   id uuid default gen_random_uuid() primary key,
   name text not null,
-  national_id text, -- Removed UNIQUE constraint here to allow multi-school
+  national_id text, 
   specialty text,
   category text, 
   role text default 'المعلم',
+  roles text[] default '{}', -- New Array Column
   mobile text,
   password text,
   school_id uuid references schools(id) on delete set null,
@@ -129,7 +143,7 @@ create table if not exists teachers (
 
 create table if not exists app_users (
   id uuid default gen_random_uuid() primary key,
-  email text unique not null,
+  email text not null,
   full_name text not null,
   password text,
   role text not null,
@@ -225,6 +239,7 @@ ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default '
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text;
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS role text default 'المعلم';
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] default '{}';
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
@@ -476,7 +491,11 @@ create policy "Public Access" on teacher_evidence for all using (true);
         setEditingUserId(null);
         setNewUser({ role: UserRole.TEACHER });
     } catch (error: any) {
-        alert('حدث خطأ: ' + getErrorMessage(error));
+        if (error?.code === '23505') {
+            alert('هذا المستخدم مسجل بالفعل. لا يمكن تكرار البريد الإلكتروني في نفس المدرسة.');
+        } else {
+            alert('حدث خطأ: ' + getErrorMessage(error));
+        }
     }
   };
 
@@ -1002,15 +1021,15 @@ create policy "Public Access" on teacher_evidence for all using (true);
                         <div className="flex-1">
                             <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات وإصلاح القيود</h2>
                             <p className="text-gray-500 mb-4 text-sm leading-relaxed">
-                                يحتوي السكربت أدناه على جميع الجداول اللازمة، بما في ذلك <strong>إصلاح مشكلة تكرار رقم الهوية (للسماح بالعمل في مدارس متعددة)</strong>.
+                                يحتوي السكربت أدناه على إصلاح <strong>تفرد البيانات (البريد والهوية)</strong> للسماح بنفس المستخدم في مدارس متعددة بصلاحيات مختلفة.
                             </p>
                             
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                                 <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm">
-                                    <AlertTriangle size={16} /> تنبيه هام جداً
+                                    <AlertTriangle size={16} /> تحديث هام لتعدد الصلاحيات
                                 </h4>
                                 <p className="text-xs text-blue-800">
-                                    لتفعيل ميزة "معلم في مدارس متعددة"، يجب نسخ هذا الكود وتشغيله في Supabase SQL Editor. سيقوم الكود بإلغاء قيد "الهوية الفريدة" العام واستبداله بقيد "هوية فريدة لكل مدرسة".
+                                    لتفعيل ميزة "سجل واحد بصلاحيات متعددة"، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor. سيقوم الكود بإنشاء عمود للصلاحيات المتعددة ونقل البيانات القديمة إليه.
                                 </p>
                             </div>
 

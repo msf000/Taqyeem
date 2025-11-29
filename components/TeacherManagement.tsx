@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield } from 'lucide-react';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, UserPlus } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 import readXlsxFile from 'read-excel-file';
@@ -34,7 +34,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   const [filterStatus, setFilterStatus] = useState('');
 
   // Add Teacher Form State
-  const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
+  const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ category: TeacherCategory.TEACHER, roles: [UserRole.TEACHER] });
+  const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([UserRole.TEACHER]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Import Logic State
@@ -68,7 +69,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         
         if (userRole === UserRole.PRINCIPAL && userName) {
              schoolsQuery = schoolsQuery.eq('manager_name', userName);
-        } else if (userRole === UserRole.PRINCIPAL && schoolId) {
+        } else if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
+             // Restrict to specific school for Principal (by ID fallback) and Evaluator
              schoolsQuery = schoolsQuery.eq('id', schoolId);
         }
 
@@ -86,8 +88,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         }));
         setSchools(mappedSchools);
         
-        // Auto-select school for import if Principal has only one
-        if (userRole === UserRole.PRINCIPAL && mappedSchools.length === 1) {
+        // Auto-select school for import if Principal/Evaluator has only one
+        if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && mappedSchools.length === 1) {
             setImportTargetSchoolId(mappedSchools[0].id);
         }
 
@@ -101,6 +103,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             } else {
                  teachersQuery = teachersQuery.eq('id', '00000000-0000-0000-0000-000000000000');
             }
+        } else if (userRole === UserRole.EVALUATOR && schoolId) {
+            // STRICT FILTER FOR EVALUATOR: Only teachers in their school
+            teachersQuery = teachersQuery.eq('school_id', schoolId);
         }
 
         const { data: teachersData, error: teachersError } = await teachersQuery;
@@ -118,13 +123,24 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 status = evalRecord.status === 'completed' ? EvaluationStatus.COMPLETED : EvaluationStatus.DRAFT;
             }
 
+            // Normalize roles: prioritize 'roles' array, fallback to single 'role'
+            let roles: UserRole[] = [];
+            if (t.roles && Array.isArray(t.roles) && t.roles.length > 0) {
+                roles = t.roles;
+            } else if (t.role) {
+                roles = [t.role as UserRole];
+            } else {
+                roles = [UserRole.TEACHER];
+            }
+
             return {
                 id: t.id,
                 name: t.name,
                 nationalId: t.national_id,
                 specialty: t.specialty,
                 category: t.category as TeacherCategory,
-                role: (t.role as UserRole) || UserRole.TEACHER,
+                role: roles[0], // Keep for backward compatibility/sorting
+                roles: roles,
                 mobile: t.mobile,
                 schoolId: t.school_id,
                 status: status
@@ -156,9 +172,20 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           mobile: teacher.mobile,
           schoolId: teacher.schoolId
       });
+      setSelectedRoles(teacher.roles || [UserRole.TEACHER]);
       setEditingId(teacher.id);
       setSubTab('add');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleRoleToggle = (role: UserRole) => {
+      setSelectedRoles(prev => {
+          if (prev.includes(role)) {
+              return prev.filter(r => r !== role);
+          } else {
+              return [...prev, role];
+          }
+      });
   };
 
   const handleDeleteTeacher = async (id: string): Promise<boolean> => {
@@ -170,8 +197,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           const { error: evalError } = await supabase.from('evaluations').delete().eq('teacher_id', id);
           if (evalError) {
               console.warn('Warning deleting evaluations:', evalError);
-              // Do not throw, try to delete teacher anyway if the user has correct permissions
-              // If CASCADE is set on DB, this manual step is redundant but safe.
           }
 
           // 2. Delete the teacher
@@ -188,7 +213,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           console.error(error);
           let msg = getErrorMessage(error);
           
-          // Add helpful hint if it's a constraint error
           if (msg.includes('foreign key constraint')) {
               msg = `لا يمكن حذف المعلم لوجود سجلات مرتبطة به (تقييمات). \n\nيرجى الذهاب إلى الإعدادات > قاعدة البيانات، وتشغيل كود "إصلاح القيود" لحل هذه المشكلة بشكل نهائي.`;
           }
@@ -206,8 +230,13 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           return;
       }
 
+      if (selectedRoles.length === 0) {
+          alert("يجب اختيار صلاحية واحدة على الأقل");
+          return;
+      }
+
       let targetSchoolId = newTeacher.schoolId;
-      if (!targetSchoolId && userRole === UserRole.PRINCIPAL && schools.length === 1) {
+      if (!targetSchoolId && (userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schools.length === 1) {
           targetSchoolId = schools[0].id;
       }
 
@@ -223,7 +252,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
               national_id: newTeacher.nationalId,
               specialty: newTeacher.specialty,
               category: newTeacher.category,
-              role: newTeacher.role,
+              role: selectedRoles[0], // Primary role for legacy support
+              roles: selectedRoles,   // Array for multiple support
               mobile: newTeacher.mobile,
               school_id: targetSchoolId
           };
@@ -238,7 +268,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
           await fetchData();
           setSubTab('list');
-          setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
+          setNewTeacher({ category: TeacherCategory.TEACHER });
+          setSelectedRoles([UserRole.TEACHER]);
           setEditingId(null);
       } catch (error: any) {
           console.error("Error saving teacher:", error);
@@ -256,7 +287,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
   const handleCancelEdit = () => {
       setSubTab('list');
-      setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
+      setNewTeacher({ category: TeacherCategory.TEACHER });
+      setSelectedRoles([UserRole.TEACHER]);
       setEditingId(null);
   };
 
@@ -343,6 +375,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                      mobile: mobile, 
                      category: TeacherCategory.TEACHER, 
                      role: UserRole.TEACHER,
+                     roles: [UserRole.TEACHER], // Default import role
                      school_id: importTargetSchoolId 
                  }]);
                  
@@ -393,17 +426,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     }
   };
 
-  const renderStatus = (status: EvaluationStatus) => {
-    switch (status) {
-        case EvaluationStatus.COMPLETED:
-            return <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold border border-green-200">مكتمل</span>;
-        case EvaluationStatus.DRAFT:
-            return <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded-full font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
-        default:
-            return <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full font-medium">بانتظار التقييم</span>;
-    }
-  };
-
   // Filter Logic
   const uniqueSpecialties = Array.from(new Set(teachers.map(t => t.specialty).filter(Boolean)));
   const filteredTeachers = teachers.filter(teacher => {
@@ -427,7 +449,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     <div className="space-y-6">
       <div className="flex border-b border-gray-200 gap-6">
         <button onClick={() => { setSubTab('list'); setEditingId(null); }} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
-        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER }); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); setSelectedRoles([UserRole.TEACHER]); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
             {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
         </button>
         <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
@@ -462,8 +484,16 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                     <p className="font-medium">{viewTeacher.specialty}</p>
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">الصلاحية</label>
-                                    <p className="font-medium">{viewTeacher.role || UserRole.TEACHER}</p>
+                                    <label className="text-xs text-gray-500 block mb-1">الصلاحيات</label>
+                                    <div className="flex flex-wrap gap-1">
+                                        {viewTeacher.roles && viewTeacher.roles.length > 0 ? (
+                                            viewTeacher.roles.map((r, i) => (
+                                                <span key={i} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">{r}</span>
+                                            ))
+                                        ) : (
+                                            <span className="font-medium">{viewTeacher.role || UserRole.TEACHER}</span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg">
                                     <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
@@ -547,7 +577,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                             <th className="px-6 py-4">الاسم الكامل</th>
                             <th className="px-6 py-4">رقم الهوية</th>
                             <th className="px-6 py-4">فئة المعلم</th>
-                            <th className="px-6 py-4">الصلاحية</th>
+                            <th className="px-6 py-4">الصلاحيات</th>
                             <th className="px-6 py-4">التخصص</th>
                             <th className="px-6 py-4">المدرسة</th>
                             <th className="px-6 py-4 text-center">الإجراءات</th>
@@ -572,11 +602,15 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                             <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs border border-blue-100">{teacher.category}</span>
                                         </td>
                                         <td className="px-6 py-4 text-sm">
-                                            {teacher.role && teacher.role !== UserRole.TEACHER ? (
-                                                <span className="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs border border-purple-100 font-bold">{teacher.role}</span>
-                                            ) : (
-                                                <span className="text-gray-400 text-xs">معلم</span>
-                                            )}
+                                            <div className="flex flex-wrap gap-1 max-w-[150px]">
+                                                {teacher.roles && teacher.roles.length > 0 ? (
+                                                    teacher.roles.map((r, idx) => (
+                                                        <span key={idx} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md text-[10px] border border-purple-100 font-bold whitespace-nowrap">{r}</span>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-gray-400 text-xs">معلم</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
                                         <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
@@ -599,9 +633,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                             
                                             <div className="relative group">
                                                 <button className="p-1 text-gray-400 hover:text-gray-600"><MoreHorizontal size={20} /></button>
-                                                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden">
-                                                    <button onClick={() => setViewTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">عرض</button>
-                                                    <button onClick={() => handleEditTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">تحرير</button>
+                                                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden">
+                                                    <button onClick={() => setViewTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">عرض التفاصيل</button>
+                                                    <button onClick={() => handleEditTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">تحرير البيانات</button>
                                                     <button onClick={() => handleDeleteTeacher(teacher.id)} className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50">حذف</button>
                                                 </div>
                                             </div>
@@ -630,10 +664,10 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             </h3>
              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-6 flex gap-3 text-sm text-blue-800">
                 <Info className="shrink-0 text-blue-600" size={20} />
-                <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام، وسيكون الرمز السري الافتراضي هو <strong>آخر 4 أرقام من الهوية</strong>.</p>
+                <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام. يمكن إسناد أكثر من صلاحية لنفس المعلم (مثلاً معلم ومقيم في آن واحد).</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {(userRole !== UserRole.PRINCIPAL || schools.length > 1) && (
+                 {(userRole !== UserRole.PRINCIPAL && userRole !== UserRole.EVALUATOR || schools.length > 1) && (
                      <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة <span className="text-red-500">*</span></label>
                         <select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 bg-white" value={newTeacher.schoolId || ''} onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}>
@@ -642,7 +676,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                         </select>
                      </div>
                  )}
-                 {userRole === UserRole.PRINCIPAL && schools.length === 1 && (
+                 {(userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schools.length === 1 && (
                      <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2"><CheckCircle className="text-blue-600" size={20}/><span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span></div>
                  )}
                  {schools.length === 0 && (
@@ -652,21 +686,27 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-mono text-left" dir="ltr" placeholder="10xxxxxxxx" value={newTeacher.nationalId || ''} onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label><select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.category} onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}>{Object.values(TeacherCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
                  
-                 {/* Role Selection */}
+                 {/* Role Selection (Multi-select) */}
                  <div className="md:col-span-2 bg-purple-50 p-4 rounded-xl border border-purple-100">
                      <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">
-                         <Shield size={16}/> صلاحيات النظام (System Role)
+                         <Shield size={16}/> صلاحيات النظام (System Roles)
                      </label>
-                     <p className="text-xs text-gray-500 mb-3">تحدد هذه الصلاحية مستوى وصول المعلم للنظام (مثل: القدرة على تقييم الآخرين).</p>
-                     <select 
-                        className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 bg-white"
-                        value={newTeacher.role || UserRole.TEACHER}
-                        onChange={(e) => setNewTeacher({...newTeacher, role: e.target.value as UserRole})}
-                     >
-                         <option value={UserRole.TEACHER}>معلم (صلاحية افتراضية)</option>
-                         <option value={UserRole.EVALUATOR}>مقيم (يمكنه تقييم المعلمين)</option>
-                         <option value={UserRole.PRINCIPAL}>مدير مدرسة (صلاحية كاملة على المدرسة)</option>
-                     </select>
+                     <p className="text-xs text-gray-500 mb-3">اختر الصلاحيات التي يمتلكها هذا الموظف في النظام (يمكن اختيار أكثر من واحدة).</p>
+                     
+                     <div className="flex flex-wrap gap-3">
+                         {[UserRole.TEACHER, UserRole.EVALUATOR, UserRole.PRINCIPAL].map(role => (
+                             <label key={role} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${selectedRoles.includes(role) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'}`}>
+                                 <input 
+                                     type="checkbox" 
+                                     className="hidden"
+                                     checked={selectedRoles.includes(role)}
+                                     onChange={() => handleRoleToggle(role)}
+                                 />
+                                 {selectedRoles.includes(role) ? <CheckCircle size={16} className="text-white"/> : <span className="w-4 h-4 rounded-full border border-gray-300 bg-gray-50"></span>}
+                                 <span className="text-sm font-medium">{role}</span>
+                             </label>
+                         ))}
+                     </div>
                  </div>
 
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
@@ -683,7 +723,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                 if (success) {
                                     setSubTab('list');
                                     setEditingId(null);
-                                    setNewTeacher({ category: TeacherCategory.TEACHER, role: UserRole.TEACHER });
+                                    setNewTeacher({ category: TeacherCategory.TEACHER });
+                                    setSelectedRoles([UserRole.TEACHER]);
                                 }
                             }} 
                             className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 transition-colors"

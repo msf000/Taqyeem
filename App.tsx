@@ -54,40 +54,85 @@ export default function App() {
       }
   }, []);
 
-  // Fetch ALL schools and roles for the current user's national ID
+  // Fetch ALL schools and roles for the current user (National ID OR Email)
   useEffect(() => {
     const fetchUserProfiles = async () => {
-      if (currentUser?.nationalId) {
-        try {
-            // Find all profiles with same National ID in 'teachers' table
+      setAvailableProfiles([]);
+      try {
+          // 1. Check National ID (Teachers Table)
+          if (currentUser?.nationalId) {
             const { data: profiles } = await supabase
               .from('teachers')
-              .select('id, school_id, role, name, schools(name)')
+              .select('id, school_id, role, roles, name, schools(name)')
               .eq('national_id', currentUser.nationalId);
             
             if (profiles && profiles.length > 0) {
-               // Map to a cleaner format
-               const profilesList = profiles.map((p: any) => ({
-                 teacherId: p.id, // The ID in 'teachers' table specific to this school/role
-                 schoolId: p.school_id,
-                 schoolName: p.schools?.name || 'مدرسة غير محددة',
-                 role: p.role || UserRole.TEACHER,
-                 name: p.name
-               }));
-               setAvailableProfiles(profilesList);
-            } else {
-               setAvailableProfiles([]);
+               // Logic: Flatten the roles array. If roles is null/empty, fallback to 'role'
+               const flattenedProfiles: any[] = [];
+               
+               profiles.forEach((p: any) => {
+                   let rolesToProcess: UserRole[] = [];
+                   if (p.roles && Array.isArray(p.roles) && p.roles.length > 0) {
+                       rolesToProcess = p.roles;
+                   } else if (p.role) {
+                       rolesToProcess = [p.role as UserRole];
+                   } else {
+                       rolesToProcess = [UserRole.TEACHER];
+                   }
+
+                   rolesToProcess.forEach(role => {
+                       flattenedProfiles.push({
+                           userId: p.id,
+                           schoolId: p.school_id,
+                           schoolName: p.schools?.name || 'مدرسة غير محددة',
+                           role: role,
+                           name: p.name,
+                           nationalId: currentUser.nationalId,
+                           type: 'teacher'
+                       });
+                   });
+               });
+
+               setAvailableProfiles(prev => [...prev, ...flattenedProfiles]);
             }
-        } catch (e) {
+          }
+
+          // 2. Check Email (App Users Table)
+          if (currentUser?.email) {
+             const { data: profiles } = await supabase
+              .from('app_users')
+              .select('id, school_id, role, full_name, email, schools(name)')
+              .eq('email', currentUser.email);
+             
+             if (profiles && profiles.length > 0) {
+                 const profilesList = profiles.map((p: any) => ({
+                     userId: p.id,
+                     schoolId: p.school_id,
+                     schoolName: p.schools?.name || 'مدرسة غير محددة',
+                     role: p.role,
+                     name: p.full_name,
+                     email: p.email,
+                     type: 'admin'
+                 }));
+                 // Avoid duplicates if user is somehow in both logic (rare)
+                 setAvailableProfiles(prev => {
+                     // Check existing based on ID AND Role to avoid duplicates
+                     const existingKeys = new Set(prev.map(item => `${item.userId}-${item.role}`));
+                     const newItems = profilesList.filter(item => !existingKeys.has(`${item.userId}-${item.role}`));
+                     return [...prev, ...newItems];
+                 });
+             }
+          }
+
+      } catch (e) {
           console.error("Error checking profiles", e);
-        }
-      } else {
-        setAvailableProfiles([]);
       }
     };
 
-    fetchUserProfiles();
-  }, [currentUser?.nationalId]); // Dependency on National ID
+    if (currentUser) {
+        fetchUserProfiles();
+    }
+  }, [currentUser?.nationalId, currentUser?.email]);
 
   // Click outside to close user menu
   useEffect(() => {
@@ -105,11 +150,13 @@ export default function App() {
 
       const newUserState: User = {
           ...currentUser,
-          id: targetProfile.teacherId, // Switch the active teacher ID
+          id: targetProfile.userId,
           schoolId: targetProfile.schoolId,
           schoolName: targetProfile.schoolName,
-          role: targetProfile.role, // Switch Role
-          name: targetProfile.name
+          role: targetProfile.role,
+          name: targetProfile.name,
+          email: targetProfile.email || currentUser.email,
+          nationalId: targetProfile.nationalId || currentUser.nationalId
       };
 
       setCurrentUser(newUserState);
@@ -117,7 +164,6 @@ export default function App() {
       setShowUserMenu(false);
       setActiveTab(Tab.DASHBOARD);
       setCurrentView('main');
-      // Optional: Refresh to ensure clean slate for data fetching
       window.location.reload(); 
   };
 
@@ -346,7 +392,7 @@ export default function App() {
                         {/* Header */}
                         <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
                             <p className="font-bold text-secondary-900">{currentUser.name}</p>
-                            <p className="text-xs text-secondary-500 mt-0.5 font-mono">{currentUser.nationalId}</p>
+                            <p className="text-xs text-secondary-500 mt-0.5 font-mono">{currentUser.email || currentUser.nationalId}</p>
                         </div>
 
                         {/* Profiles Switcher */}
@@ -356,10 +402,11 @@ export default function App() {
                                     الحسابات المتاحة (المدارس والصلاحيات)
                                 </div>
                                 {availableProfiles.map((profile) => {
-                                    const isActive = currentUser.id === profile.teacherId;
+                                    // Complex check because a user might have same ID but different role in this new system
+                                    const isActive = currentUser.id === profile.userId && currentUser.role === profile.role;
                                     return (
                                         <button
-                                            key={profile.teacherId}
+                                            key={`${profile.userId}-${profile.role}`}
                                             onClick={() => handleSwitchProfile(profile)}
                                             className={`w-full text-right px-5 py-3 text-sm flex items-center justify-between group transition-colors ${isActive ? 'bg-primary-50 text-primary-900' : 'hover:bg-gray-50 text-gray-700'}`}
                                         >
@@ -378,7 +425,6 @@ export default function App() {
                                 })}
                             </div>
                         ) : (
-                            // Fallback for Admins without 'teachers' table link
                             <div className="p-4 text-center text-sm text-gray-500">
                                 لا توجد حسابات أخرى مرتبطة.
                             </div>

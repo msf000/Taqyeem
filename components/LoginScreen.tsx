@@ -26,40 +26,54 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
   // Multi-School Selection State
   const [showSchoolSelect, setShowSchoolSelect] = useState(false);
-  const [foundTeacherAccounts, setFoundTeacherAccounts] = useState<any[]>([]);
+  const [foundAccounts, setFoundAccounts] = useState<any[]>([]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoading(true);
       setErrorMsg('');
+      setFoundAccounts([]);
 
       try {
-          // Check app_users table
-          const { data: user, error } = await supabase
+          // Fetch users matching the email
+          const { data: users, error } = await supabase
               .from('app_users')
               .select('*, schools(name)')
-              .eq('email', email)
-              .single();
+              .eq('email', email);
 
-          if (error || !user) {
+          if (error) throw error;
+
+          if (!users || users.length === 0) {
               throw new Error('البريد الإلكتروني غير مسجل في النظام');
           }
 
-          // Check Password
-          if (user.password && user.password !== adminPassword) {
+          // Check Password against ANY found record (usually identical, but check all)
+          const validUser = users.find(u => u.password === adminPassword);
+
+          if (!validUser) {
               throw new Error('كلمة المرور غير صحيحة');
           }
 
-          const userData: User = {
-              id: user.id,
-              name: user.full_name,
-              role: user.role as UserRole,
-              email: user.email,
-              schoolId: user.school_id,
-              schoolName: user.schools?.name
-          };
+          // Filter to only records with valid password in case of mix
+          const validAccounts = users.filter(u => u.password === adminPassword);
 
-          onLogin(userData);
+          if (validAccounts.length === 1) {
+              // Single account found
+              const u = validAccounts[0];
+              const userData: User = {
+                  id: u.id,
+                  name: u.full_name,
+                  role: u.role as UserRole,
+                  email: u.email,
+                  schoolId: u.school_id,
+                  schoolName: u.schools?.name
+              };
+              onLogin(userData);
+          } else {
+              // Multiple accounts found (Multi-School Admin/Principal)
+              setFoundAccounts(validAccounts);
+              setShowSchoolSelect(true);
+          }
 
       } catch (error: any) {
           console.error(error);
@@ -74,7 +88,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       e.preventDefault();
       setIsLoading(true);
       setErrorMsg('');
-      setFoundTeacherAccounts([]);
+      setFoundAccounts([]);
 
       try {
           if (!nationalId) throw new Error('يرجى إدخال رقم الهوية');
@@ -91,9 +105,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               throw new Error('رقم الهوية غير مسجل في النظام. يرجى مراجعة مدير المدرسة.');
           }
 
-          // 2. Validate Password against ANY found record
-          let validAccount = null;
-          
+          // 2. Validate Password
           const isPasswordValid = teachers.some(t => {
               if (t.password) {
                   return t.password === teacherPassword;
@@ -108,23 +120,21 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
           // 3. Handle Login
           if (teachers.length === 1) {
-              // Only one school found, login directly
               const t = teachers[0];
-              // Use assigned role or default to Teacher
               const assignedRole = (t.role as UserRole) || UserRole.TEACHER;
               
               const userData: User = {
                   id: t.id,
                   name: t.name,
                   role: assignedRole,
-                  nationalId: t.national_id, // Important for profile switching
+                  nationalId: t.national_id, 
                   schoolId: t.school_id,
                   schoolName: t.schools?.name
               };
               onLogin(userData);
           } else {
-              // Multiple schools found, show selection
-              setFoundTeacherAccounts(teachers);
+              // Multiple schools found
+              setFoundAccounts(teachers);
               setShowSchoolSelect(true);
           }
 
@@ -136,16 +146,32 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       }
   };
 
-  const selectTeacherAccount = (account: any) => {
-      const assignedRole = (account.role as UserRole) || UserRole.TEACHER;
-      const userData: User = {
-          id: account.id,
-          name: account.name,
-          role: assignedRole,
-          nationalId: account.national_id, // Important
-          schoolId: account.school_id,
-          schoolName: account.schools?.name
-      };
+  const selectAccount = (account: any) => {
+      // Determine if this is a Teacher account or App User account
+      const isTeacher = !!account.national_id; // teachers table has national_id, app_users has email
+      
+      let userData: User;
+
+      if (isTeacher) {
+          userData = {
+              id: account.id,
+              name: account.name,
+              role: (account.role as UserRole) || UserRole.TEACHER,
+              nationalId: account.national_id,
+              schoolId: account.school_id,
+              schoolName: account.schools?.name
+          };
+      } else {
+          // App User (Admin/Principal)
+          userData = {
+              id: account.id,
+              name: account.full_name,
+              role: account.role as UserRole,
+              email: account.email,
+              schoolId: account.school_id,
+              schoolName: account.schools?.name
+          };
+      }
       onLogin(userData);
   };
 
@@ -162,7 +188,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="absolute bottom-[-10%] left-[-5%] w-96 h-96 bg-blue-200/40 rounded-full blur-3xl"></div>
       </div>
 
-      {/* School Selection Modal for Teachers */}
+      {/* Account Selection Modal */}
       {showSchoolSelect && (
           <div className="fixed inset-0 bg-secondary-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
               <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-secondary-200">
@@ -170,15 +196,15 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                       <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
                         <GraduationCap size={32}/>
                       </div>
-                      <h3 className="text-2xl font-bold mb-1">اختيار المدرسة</h3>
-                      <p className="text-primary-100 text-sm">وجدنا حسابك مسجلاً في أكثر من مدرسة</p>
+                      <h3 className="text-2xl font-bold mb-1">اختيار الحساب</h3>
+                      <p className="text-primary-100 text-sm">وجدنا أكثر من حساب مرتبط ببياناتك</p>
                   </div>
                   <div className="p-6 space-y-3">
-                      <p className="text-secondary-600 text-sm mb-3 font-bold">يرجى اختيار المدرسة التي تود الدخول إليها:</p>
-                      {foundTeacherAccounts.map((acc: any) => (
+                      <p className="text-secondary-600 text-sm mb-3 font-bold">يرجى اختيار المدرسة/الصلاحية للدخول:</p>
+                      {foundAccounts.map((acc: any) => (
                           <button 
                               key={acc.id}
-                              onClick={() => selectTeacherAccount(acc)}
+                              onClick={() => selectAccount(acc)}
                               className="w-full flex items-center gap-4 p-4 rounded-xl border border-secondary-200 hover:border-primary-500 hover:bg-primary-50 hover:shadow-md transition-all text-right group"
                           >
                               <div className="bg-white p-3 rounded-full border border-secondary-100 group-hover:border-primary-200 shadow-sm">
@@ -187,11 +213,12 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                               <div>
                                   <div className="flex items-center gap-2">
                                       <h4 className="font-bold text-secondary-800 group-hover:text-primary-900 text-base">{acc.schools?.name || 'مدرسة غير معروفة'}</h4>
-                                      {acc.role && acc.role !== UserRole.TEACHER && (
+                                      {acc.role && (
                                           <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">{acc.role}</span>
                                       )}
                                   </div>
-                                  <span className="text-xs text-secondary-500 group-hover:text-primary-700">التخصص: {acc.specialty}</span>
+                                  {acc.specialty && <span className="text-xs text-secondary-500 group-hover:text-primary-700">التخصص: {acc.specialty}</span>}
+                                  {acc.email && <span className="text-xs text-secondary-500 group-hover:text-primary-700">{acc.email}</span>}
                               </div>
                               <ArrowRight size={18} className="mr-auto text-secondary-300 group-hover:text-primary-500"/>
                           </button>

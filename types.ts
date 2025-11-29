@@ -50,6 +50,7 @@ export interface Teacher {
   specialty: string;
   category: TeacherCategory;
   role?: UserRole; 
+  roles?: UserRole[]; // New field for multiple roles support
   schoolId: string;
   status: EvaluationStatus;
   mobile: string;
