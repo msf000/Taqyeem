@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
@@ -38,10 +38,10 @@ export default function App() {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
 
-  // Multi-School Switching State
+  // Multi-School & User Menu State
   const [userSchools, setUserSchools] = useState<any[]>([]);
-  const [showSchoolSwitcher, setShowSchoolSwitcher] = useState(false);
-  const switcherRef = useRef<HTMLDivElement>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
       const savedUser = localStorage.getItem('nizam_user');
@@ -96,11 +96,11 @@ export default function App() {
     fetchUserSchools();
   }, [currentUser]);
 
-  // Click outside to close switcher
+  // Click outside to close user menu
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (switcherRef.current && !switcherRef.current.contains(event.target as Node)) {
-        setShowSchoolSwitcher(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -119,7 +119,7 @@ export default function App() {
 
       setCurrentUser(newUserState);
       localStorage.setItem('nizam_user', JSON.stringify(newUserState));
-      setShowSchoolSwitcher(false);
+      setShowUserMenu(false);
       setActiveTab(Tab.DASHBOARD);
       setCurrentView('main');
       // Optional: Refresh to ensure clean slate for data fetching
@@ -322,55 +322,82 @@ export default function App() {
               </nav>
             </div>
 
-            <div className="flex items-center gap-4">
-               <div className="text-left hidden sm:block bg-secondary-50 px-4 py-2 rounded-xl border border-secondary-100">
-                  <div className="text-sm font-bold text-secondary-800">{currentUser.name}</div>
-                  <div className="flex items-center gap-1 justify-end text-xs text-secondary-500 relative">
-                      {currentUser.role}
-                      
-                      {/* School Name & Switcher */}
-                      {currentUser.schoolName && (
-                          <div className="relative mr-2" ref={switcherRef}>
-                              <button 
-                                onClick={() => userSchools.length > 1 && setShowSchoolSwitcher(!showSchoolSwitcher)}
-                                className={`flex items-center gap-1 bg-white border px-1.5 py-0.5 rounded text-[10px] shadow-sm transition-colors ${userSchools.length > 1 ? 'hover:bg-primary-50 hover:border-primary-200 cursor-pointer text-primary-700 font-bold' : ''}`}
-                              >
-                                  {currentUser.schoolName}
-                                  {userSchools.length > 1 && <RefreshCw size={10} />}
-                              </button>
+            <div className="relative" ref={userMenuRef}>
+                <button 
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200"
+                >
+                    <div className="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold text-lg shadow-sm border-2 border-white">
+                        {currentUser.name.charAt(0)}
+                    </div>
+                    <div className="hidden md:block text-right">
+                        <div className="text-sm font-bold text-secondary-800">{currentUser.name}</div>
+                        <div className="text-[10px] text-secondary-500 font-medium">{currentUser.role}</div>
+                    </div>
+                    <ChevronDown size={16} className="text-gray-400 mr-1" />
+                </button>
 
-                              {/* Dropdown Menu */}
-                              {showSchoolSwitcher && (
-                                  <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in overflow-hidden">
-                                      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 mb-1">
-                                          تبديل المدرسة
-                                      </div>
-                                      {userSchools.map(s => (
-                                          <button
-                                              key={s.teacherId}
-                                              onClick={() => handleSwitchSchool(s)}
-                                              className="w-full text-right px-4 py-2.5 text-xs hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between group transition-colors"
-                                          >
-                                              <span className="flex items-center gap-2">
-                                                  <Building2 size={12} className="text-gray-400 group-hover:text-primary-500"/>
-                                                  {s.schoolName}
-                                              </span>
-                                              {currentUser.id === s.teacherId && <Check size={12} className="text-primary-600"/>}
-                                          </button>
-                                      ))}
-                                  </div>
-                              )}
-                          </div>
-                      )}
-                  </div>
-               </div>
-               <button 
-                 onClick={handleLogout}
-                 className="p-3 text-secondary-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                 title="تسجيل الخروج"
-               >
-                 <LogOut size={20} />
-               </button>
+                {showUserMenu && (
+                    <div className="absolute top-full left-0 mt-3 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in origin-top-left">
+                        {/* Header */}
+                        <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+                            <p className="font-bold text-secondary-900">{currentUser.name}</p>
+                            <p className="text-xs text-secondary-500 mt-0.5">{currentUser.role}</p>
+                        </div>
+
+                        {/* School Switcher Section */}
+                        {userSchools.length > 1 ? (
+                            <div className="py-2">
+                                <div className="px-5 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    المدارس المرتبطة ({userSchools.length})
+                                </div>
+                                {userSchools.map(s => (
+                                    <button
+                                        key={s.teacherId}
+                                        onClick={() => handleSwitchSchool(s)}
+                                        className="w-full text-right px-5 py-3 text-sm hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between group transition-colors"
+                                    >
+                                        <span className="flex items-center gap-3">
+                                            <School size={16} className="text-gray-400 group-hover:text-primary-500"/>
+                                            <span className="font-medium">{s.schoolName}</span>
+                                        </span>
+                                        {currentUser.id === s.teacherId && <Check size={16} className="text-primary-600"/>}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            // Single School or Admin View
+                            <div className="p-2">
+                                {currentUser.schoolName && (
+                                    <div className="px-3 py-2">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">المدرسة الحالية</div>
+                                        <div className="flex items-center gap-2 text-sm text-secondary-700 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                            <Building2 size={16} className="text-gray-400"/>
+                                            {currentUser.schoolName}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="px-3 py-2">
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">الصلاحيات</div>
+                                    <div className="flex items-center gap-2 text-sm text-secondary-700 bg-green-50 p-2 rounded-lg border border-green-100 text-green-800">
+                                        <ShieldCheck size={16} />
+                                        <span>{currentUser.role}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Footer Actions */}
+                        <div className="border-t border-gray-100 p-2 bg-gray-50/50">
+                            <button 
+                                onClick={handleLogout}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                            >
+                                <LogOut size={18} /> تسجيل الخروج
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List, Trash2 } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, EvaluationData, EvaluationStatus } from '../types';
@@ -262,7 +263,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
           if (error) throw error;
 
           setGlobalEvidence(prev => prev.filter(e => e.id !== id));
-      } catch (error) {
+      } catch (error: any) {
           const msg = getErrorMessage(error);
           alert('فشل الحذف: ' + msg);
       }
@@ -270,7 +271,9 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
   const calculateTotal = (): number => {
     if (!scores) return 0;
-    return Object.values(scores).reduce((acc: number, curr: EvaluationScore) => acc + (curr.score || 0), 0);
+    // Explicitly cast to prevent type errors when Object.values returns unknown[]
+    const values = Object.values(scores) as EvaluationScore[];
+    return values.reduce((acc: number, curr: EvaluationScore) => acc + (Number(curr.score) || 0), 0);
   };
 
   const getMasteryLevel = (totalScore: number) => {
