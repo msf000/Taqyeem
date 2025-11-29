@@ -244,7 +244,16 @@ create policy "Public Access" on evaluations for all using (true);
 
   const fetchSchools = async () => {
       const { data } = await supabase.from('schools').select('id, name');
-      setSchools(data || []);
+      const mappedSchools: School[] = (data || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          stage: '',
+          type: '',
+          ministryId: '',
+          managerName: '',
+          evaluatorName: ''
+      }));
+      setSchools(mappedSchools);
   };
 
   const fetchUsers = async () => {

@@ -62,9 +62,15 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                     .single();
                 
                 if (teacherData) {
+                    const schoolsData: any = teacherData.schools;
+                    // Handle case where relation returns array or object
+                    const schoolName = Array.isArray(schoolsData) 
+                        ? schoolsData[0]?.name 
+                        : schoolsData?.name;
+
                     setTeacherProfile({
                         specialty: teacherData.specialty || 'غير محدد',
-                        schoolName: teacherData.schools?.name || 'غير محدد'
+                        schoolName: schoolName || 'غير محدد'
                     });
                 }
             } else {
