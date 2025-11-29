@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
@@ -15,6 +15,7 @@ import TeacherProfile from './components/TeacherProfile';
 import EventsManagement from './components/EventsManagement';
 import TeacherEvaluationHistory from './components/TeacherEvaluationHistory';
 import ObjectionsManagement from './components/ObjectionsManagement';
+import { supabase } from './supabaseClient';
 
 enum Tab {
   DASHBOARD = 'dashboard',
@@ -37,6 +38,11 @@ export default function App() {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
 
+  // Multi-School Switching State
+  const [userSchools, setUserSchools] = useState<any[]>([]);
+  const [showSchoolSwitcher, setShowSchoolSwitcher] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
       const savedUser = localStorage.getItem('nizam_user');
       if (savedUser) {
@@ -47,6 +53,78 @@ export default function App() {
           }
       }
   }, []);
+
+  // Fetch multiple schools for teacher
+  useEffect(() => {
+    const fetchUserSchools = async () => {
+      if (currentUser?.role === UserRole.TEACHER && currentUser.id) {
+        try {
+          // 1. Get National ID of current profile
+          const { data: currentProfile } = await supabase
+            .from('teachers')
+            .select('national_id')
+            .eq('id', currentUser.id)
+            .single();
+
+          if (currentProfile?.national_id) {
+            // 2. Find all profiles with same National ID
+            const { data: profiles } = await supabase
+              .from('teachers')
+              .select('id, school_id, schools(name)')
+              .eq('national_id', currentProfile.national_id);
+            
+            if (profiles && profiles.length > 1) {
+               // Map to a cleaner format
+               const schoolsList = profiles.map((p: any) => ({
+                 teacherId: p.id, // The ID in 'teachers' table specific to this school
+                 schoolId: p.school_id,
+                 schoolName: p.schools?.name
+               }));
+               setUserSchools(schoolsList);
+            } else {
+               setUserSchools([]);
+            }
+          }
+        } catch (e) {
+          console.error("Error checking schools", e);
+        }
+      } else {
+        setUserSchools([]);
+      }
+    };
+
+    fetchUserSchools();
+  }, [currentUser]);
+
+  // Click outside to close switcher
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(event.target as Node)) {
+        setShowSchoolSwitcher(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSwitchSchool = (targetSchool: any) => {
+      if (!currentUser) return;
+
+      const newUserState: User = {
+          ...currentUser,
+          id: targetSchool.teacherId, // Switch the active teacher ID
+          schoolId: targetSchool.schoolId,
+          schoolName: targetSchool.schoolName
+      };
+
+      setCurrentUser(newUserState);
+      localStorage.setItem('nizam_user', JSON.stringify(newUserState));
+      setShowSchoolSwitcher(false);
+      setActiveTab(Tab.DASHBOARD);
+      setCurrentView('main');
+      // Optional: Refresh to ensure clean slate for data fetching
+      window.location.reload(); 
+  };
 
   const handleLogin = (userOrRole: UserRole | User) => {
     let userData: User;
@@ -247,9 +325,43 @@ export default function App() {
             <div className="flex items-center gap-4">
                <div className="text-left hidden sm:block bg-secondary-50 px-4 py-2 rounded-xl border border-secondary-100">
                   <div className="text-sm font-bold text-secondary-800">{currentUser.name}</div>
-                  <div className="flex items-center gap-1 justify-end text-xs text-secondary-500">
+                  <div className="flex items-center gap-1 justify-end text-xs text-secondary-500 relative">
                       {currentUser.role}
-                      {currentUser.schoolName && <span className="bg-white border px-1.5 py-0.5 rounded text-[10px] shadow-sm">{currentUser.schoolName}</span>}
+                      
+                      {/* School Name & Switcher */}
+                      {currentUser.schoolName && (
+                          <div className="relative mr-2" ref={switcherRef}>
+                              <button 
+                                onClick={() => userSchools.length > 1 && setShowSchoolSwitcher(!showSchoolSwitcher)}
+                                className={`flex items-center gap-1 bg-white border px-1.5 py-0.5 rounded text-[10px] shadow-sm transition-colors ${userSchools.length > 1 ? 'hover:bg-primary-50 hover:border-primary-200 cursor-pointer text-primary-700 font-bold' : ''}`}
+                              >
+                                  {currentUser.schoolName}
+                                  {userSchools.length > 1 && <RefreshCw size={10} />}
+                              </button>
+
+                              {/* Dropdown Menu */}
+                              {showSchoolSwitcher && (
+                                  <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in overflow-hidden">
+                                      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 mb-1">
+                                          تبديل المدرسة
+                                      </div>
+                                      {userSchools.map(s => (
+                                          <button
+                                              key={s.teacherId}
+                                              onClick={() => handleSwitchSchool(s)}
+                                              className="w-full text-right px-4 py-2.5 text-xs hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between group transition-colors"
+                                          >
+                                              <span className="flex items-center gap-2">
+                                                  <Building2 size={12} className="text-gray-400 group-hover:text-primary-500"/>
+                                                  {s.schoolName}
+                                              </span>
+                                              {currentUser.id === s.teacherId && <Check size={12} className="text-primary-600"/>}
+                                          </button>
+                                      ))}
+                                  </div>
+                              )}
+                          </div>
+                      )}
                   </div>
                </div>
                <button 
