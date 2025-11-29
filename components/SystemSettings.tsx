@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson } from 'lucide-react';
+import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson, Lock } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole, SystemUser, Subscription, School } from '../types';
 
@@ -117,6 +118,7 @@ create table if not exists app_users (
   id uuid default gen_random_uuid() primary key,
   email text unique not null,
   full_name text not null,
+  password text,
   role text not null,
   school_id uuid references schools(id) on delete set null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -199,6 +201,7 @@ ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_text text;
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default 'none';
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
 -- 3. تحديث سياسات الأمان (RLS) - مع الحذف أولاً
@@ -411,6 +414,7 @@ create policy "Public Access" on evaluations for all using (true);
           email: user.email,
           full_name: user.full_name,
           role: user.role,
+          password: user.password,
           school_id: user.school_id
       });
       setEditingUserId(user.id);
@@ -605,6 +609,14 @@ create policy "Public Access" on evaluations for all using (true);
                                 />
                             </div>
                             <div>
+                                <label className="block text-xs text-gray-500 mb-1">كلمة المرور (الرقم السري)</label>
+                                <input 
+                                    type="text" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+                                    placeholder="اتركه فارغاً للإبقاء على القديمة"
+                                    value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})}
+                                />
+                            </div>
+                            <div>
                                 <label className="block text-xs text-gray-500 mb-1">الصلاحية</label>
                                 <select 
                                     className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none bg-white"
@@ -671,6 +683,7 @@ create policy "Public Access" on evaluations for all using (true);
                                 <tr>
                                     <th className="px-6 py-3">الاسم</th>
                                     <th className="px-6 py-3">البريد الإلكتروني</th>
+                                    <th className="px-6 py-3">الرقم السري</th>
                                     <th className="px-6 py-3">الدور</th>
                                     <th className="px-6 py-3">المدرسة</th>
                                     <th className="px-6 py-3">تاريخ الإضافة</th>
@@ -682,6 +695,7 @@ create policy "Public Access" on evaluations for all using (true);
                                     <tr key={user.id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 font-medium text-gray-800">{user.full_name}</td>
                                         <td className="px-6 py-4 text-gray-500 text-sm">{user.email}</td>
+                                        <td className="px-6 py-4 text-gray-500 text-sm font-mono">{user.password || '-'}</td>
                                         <td className="px-6 py-4">
                                             <span className={`px-2 py-1 rounded-full text-xs border ${
                                                 user.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-100' : 

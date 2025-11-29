@@ -51,6 +51,7 @@ export interface Teacher {
   schoolId: string;
   status: EvaluationStatus;
   mobile: string;
+  password?: string;
 }
 
 export interface ImportResult {
@@ -112,6 +113,7 @@ export interface SystemUser {
   email: string;
   full_name: string;
   role: UserRole;
+  password?: string;
   school_id?: string;
   created_at?: string;
 }

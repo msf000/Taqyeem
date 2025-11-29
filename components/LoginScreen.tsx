@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserRole, User } from '../types';
-import { Shield, School, GraduationCap, ClipboardCheck, ArrowRight, Mail, Loader2, UserPlus, User as UserIcon, Building, Globe } from 'lucide-react';
+import { Shield, School, GraduationCap, ClipboardCheck, ArrowRight, Mail, Loader2, UserPlus, User as UserIcon, Building, Globe, Lock } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import RegisterScreen from './RegisterScreen';
 
@@ -14,6 +14,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   
   // Admin/Principal Login State
   const [email, setEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   
   // Teacher Login State
   const [nationalId, setNationalId] = useState('');
@@ -42,6 +43,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
           if (error || !user) {
               throw new Error('البريد الإلكتروني غير مسجل في النظام');
+          }
+
+          // Check Password
+          if (user.password && user.password !== adminPassword) {
+              throw new Error('كلمة المرور غير صحيحة');
           }
 
           const userData: User = {
@@ -224,6 +230,17 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                                 placeholder="example@school.edu.sa"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">كلمة المرور</label>
+                            <input 
+                                type="password" 
+                                required
+                                className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                                placeholder="********"
+                                value={adminPassword}
+                                onChange={(e) => setAdminPassword(e.target.value)}
                             />
                         </div>
                         
