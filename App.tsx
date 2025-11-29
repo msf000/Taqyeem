@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar } from 'lucide-react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
@@ -14,6 +14,7 @@ import TeacherEvaluationDetails from './components/TeacherEvaluationDetails';
 import TeacherProfile from './components/TeacherProfile';
 import EventsManagement from './components/EventsManagement';
 import TeacherEvaluationHistory from './components/TeacherEvaluationHistory';
+import ObjectionsManagement from './components/ObjectionsManagement';
 
 enum Tab {
   DASHBOARD = 'dashboard',
@@ -23,6 +24,7 @@ enum Tab {
   INDICATORS = 'indicators',
   SETTINGS = 'settings',
   EVENTS = 'events',
+  OBJECTIONS = 'objections', // Added
   // Teacher Specific Tabs
   TEACHER_EVALUATION = 'teacher_evaluation',
   TEACHER_PROFILE = 'teacher_profile'
@@ -180,6 +182,8 @@ export default function App() {
         return <SystemSettings />;
       case Tab.EVENTS:
         return <EventsManagement />;
+      case Tab.OBJECTIONS:
+        return <ObjectionsManagement schoolId={currentUser?.schoolId} userRole={currentUser?.role} />;
       // Teacher Specific Views
       case Tab.TEACHER_EVALUATION:
          // Use currentUser.id assuming it matches teacher.id for this flow (or map it)
@@ -248,6 +252,16 @@ export default function App() {
                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.EVENTS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
                    >
                    <Calendar size={18} /> الأحداث
+                   </button>
+                )}
+
+                {/* Objections for Principal (and Admin) */}
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                   <button 
+                   onClick={() => { setActiveTab(Tab.OBJECTIONS); setCurrentView('main'); }}
+                   className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeTab === Tab.OBJECTIONS ? 'text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg' : 'text-gray-500 hover:text-gray-900'}`}
+                   >
+                   <MessageSquareWarning size={18} /> الاعتراضات
                    </button>
                 )}
                 

@@ -40,7 +40,8 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
     evaluations: 0,
     completedEvals: 0,
     users: 0,
-    subscriptions: 0
+    subscriptions: 0,
+    objections: 0
   });
   const [loading, setLoading] = useState(true);
   
@@ -89,22 +90,30 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                 // Evaluations count
                 let evalsCount = 0;
                 let completedCount = 0;
+                let objectionsCount = 0;
 
                 if (userRole === UserRole.PRINCIPAL && schoolId) {
+                    // Logic for Principal
                     const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', schoolId);
                     const teacherIds = schoolTeachers?.map(t => t.id) || [];
                     
                     if (teacherIds.length > 0) {
                         const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
                         const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
+                        // Count Pending Objections
+                        const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
+                        
                         evalsCount = ec || 0;
                         completedCount = cc || 0;
+                        objectionsCount = oc || 0;
                     }
                 } else if (userRole === UserRole.ADMIN) {
                     const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true });
                     const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+                    const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('objection_status', 'pending');
                     evalsCount = ec || 0;
                     completedCount = cc || 0;
+                    objectionsCount = oc || 0;
                 }
 
                 // New stats for Admin
@@ -117,7 +126,8 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                     evaluations: evalsCount || 0,
                     completedEvals: completedCount || 0,
                     users: usersCount || 0,
-                    subscriptions: subsCount || 0
+                    subscriptions: subsCount || 0,
+                    objections: objectionsCount || 0
                 });
             }
         } catch (error: any) {
@@ -214,9 +224,10 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                          <QuickAccessCard 
                             icon={<MessageSquareWarning size={32} />} 
                             title="الاعتراضات" 
-                            count={0}
+                            count={stats.objections}
                             description="مراجعة تظلمات المعلمين"
-                            onClick={() => {}} 
+                            onClick={() => onNavigate('objections')} 
+                            colorClass={stats.objections > 0 ? "bg-red-50 border-red-200" : "bg-white"}
                         />
                     </div>
                     
