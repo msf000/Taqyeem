@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye } from 'lucide-react';
+import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole } from '../types';
 
@@ -13,22 +13,33 @@ interface DashboardProps {
   onImportClick: () => void;
 }
 
-const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string }) => (
+const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description, gradient }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string, gradient?: string }) => (
   <button 
     onClick={onClick}
-    className={`${colorClass} p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col items-center justify-center gap-4 group relative h-48 w-full text-center`}
+    className={`${colorClass} ${gradient ? gradient : 'bg-white'} p-6 rounded-2xl shadow-card border border-secondary-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-start justify-between gap-4 group relative h-52 w-full text-right overflow-hidden`}
   >
-    {count !== undefined && (
-        <span className={`absolute top-4 left-4 text-xs font-bold px-3 py-1 rounded-full ${colorClass === 'bg-white' ? 'bg-primary-100 text-primary-800' : 'bg-white/20 text-white'}`}>
-            {count}
-        </span>
-    )}
-    <div className={`p-4 rounded-full transition-colors ${colorClass === 'bg-white' ? 'bg-gray-50 group-hover:bg-primary-50 text-primary-600' : 'bg-white/20 text-white'}`}>
-      {icon}
+    {/* Background Pattern for decoration */}
+    <div className="absolute top-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -translate-x-10 -translate-y-10"></div>
+    <div className="absolute bottom-0 right-0 w-24 h-24 bg-black/5 rounded-full blur-2xl translate-x-8 translate-y-8"></div>
+
+    <div className="flex justify-between w-full items-start z-10">
+        <div className={`p-4 rounded-xl transition-colors shadow-sm ${gradient ? 'bg-white/20 text-white backdrop-blur-sm' : 'bg-primary-50 text-primary-600'}`}>
+            {icon}
+        </div>
+        {count !== undefined && (
+            <span className={`text-2xl font-bold ${gradient ? 'text-white' : 'text-secondary-800'}`}>
+                {count}
+            </span>
+        )}
     </div>
-    <div>
-        <h3 className={`font-bold text-lg group-hover:opacity-90 ${colorClass === 'bg-white' ? 'text-gray-800' : 'text-white'}`}>{title}</h3>
-        {description && <p className={`text-xs mt-2 ${colorClass === 'bg-white' ? 'text-gray-500' : 'text-blue-100'}`}>{description}</p>}
+    
+    <div className="z-10 w-full">
+        <h3 className={`font-bold text-lg mb-1 ${gradient ? 'text-white' : 'text-secondary-900'}`}>{title}</h3>
+        {description && <p className={`text-sm ${gradient ? 'text-white/80' : 'text-secondary-500'}`}>{description}</p>}
+        
+        <div className={`mt-4 flex items-center gap-1 text-sm font-medium ${gradient ? 'text-white/90' : 'text-primary-600'} opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0`}>
+            <span>الذهاب</span> <ChevronLeft size={16} />
+        </div>
     </div>
   </button>
 );
@@ -141,10 +152,10 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
 
   const getRoleBadge = () => {
       switch(userRole) {
-          case UserRole.ADMIN: return <span className="bg-purple-600 text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm">مدير النظام</span>;
-          case UserRole.PRINCIPAL: return <span className="bg-primary-600 text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm">مدير المدرسة</span>;
-          case UserRole.EVALUATOR: return <span className="bg-orange-500 text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm">المقيم</span>;
-          case UserRole.TEACHER: return <span className="bg-blue-500 text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm">المعلم</span>;
+          case UserRole.ADMIN: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير النظام</span>;
+          case UserRole.PRINCIPAL: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير المدرسة</span>;
+          case UserRole.EVALUATOR: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المقيم</span>;
+          case UserRole.TEACHER: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المعلم</span>;
           default: return null;
       }
   };
@@ -154,7 +165,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
         return (
             <div className="flex flex-col items-center justify-center p-12 min-h-[300px]">
                  <Loader2 className="animate-spin text-primary-600 mb-4" size={40} />
-                 <p className="text-gray-500">جاري تحميل البيانات...</p>
+                 <p className="text-secondary-500 font-medium">جاري تحميل البيانات...</p>
             </div>
         );
       }
@@ -165,32 +176,32 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                 <div className="space-y-8 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <QuickAccessCard 
-                            icon={<School size={32} />} 
+                            icon={<School size={28} />} 
                             title="إدارة المدارس" 
                             count={stats.schools}
                             description="إضافة وتعديل بيانات المدارس"
                             onClick={() => onNavigate('schools')} 
                         />
                         <QuickAccessCard 
-                            icon={<Users size={32} />} 
+                            icon={<Users size={28} />} 
                             title="إدارة المستخدمين" 
                             count={stats.users} 
                             description="إدارة الحسابات والصلاحيات"
                             onClick={() => onNavigate('settings')} 
                         />
                         <QuickAccessCard 
-                            icon={<CreditCard size={32} />} 
+                            icon={<CreditCard size={28} />} 
                             title="الاشتراكات النشطة"
                             count={stats.subscriptions} 
                             description="متابعة وتجديد الباقات"
-                            colorClass="bg-blue-600 text-white"
+                            gradient="bg-gradient-to-br from-blue-600 to-blue-800"
                             onClick={() => onNavigate('settings')} 
                         />
                         <QuickAccessCard 
-                            icon={<FileBarChart size={32} />} 
+                            icon={<FileBarChart size={28} />} 
                             title="التقارير الشاملة" 
                             description="إحصائيات مستوى الوزارة"
-                            colorClass="bg-purple-700 text-white"
+                            gradient="bg-gradient-to-br from-purple-600 to-purple-800"
                             onClick={() => onNavigate('analytics')} 
                         />
                     </div>
@@ -202,51 +213,52 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                 <div className="space-y-8 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <QuickAccessCard 
-                            icon={<Users size={32} />} 
+                            icon={<Users size={28} />} 
                             title="قائمة المعلمين" 
                             count={stats.teachers}
                             description="إدارة ومتابعة معلمي المدرسة"
                             onClick={() => onNavigate('teachers')} 
                         />
                         <QuickAccessCard 
-                            icon={<Star size={32} />} 
+                            icon={<Star size={28} />} 
                             title="التقييمات المنجزة" 
                             count={stats.completedEvals}
                             description="عرض نتائج الأداء الوظيفي"
                             onClick={() => onNavigate('analytics')} 
                         />
                         <QuickAccessCard 
-                            icon={<Upload size={32} />} 
+                            icon={<Upload size={28} />} 
                             title="استيراد البيانات" 
                             description="رفع بيانات المعلمين (Excel)"
                             onClick={onImportClick} 
                         />
                          <QuickAccessCard 
-                            icon={<MessageSquareWarning size={32} />} 
+                            icon={<MessageSquareWarning size={28} />} 
                             title="الاعتراضات" 
                             count={stats.objections}
                             description="مراجعة تظلمات المعلمين"
                             onClick={() => onNavigate('objections')} 
-                            colorClass={stats.objections > 0 ? "bg-red-50 border-red-200" : "bg-white"}
+                            gradient={stats.objections > 0 ? "bg-gradient-to-br from-red-500 to-red-700" : undefined}
                         />
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <h3 className="font-bold text-gray-800 mb-4">حالة التقييم في المدرسة</h3>
-                            <div className="flex items-center gap-4">
-                                <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+                        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-secondary-100 shadow-card">
+                            <h3 className="font-bold text-xl text-secondary-800 mb-6">حالة التقييم في المدرسة</h3>
+                            <div className="flex items-center gap-6">
+                                <div className="flex-1 bg-secondary-100 rounded-full h-5 overflow-hidden shadow-inner">
                                     <div 
-                                        className="bg-green-500 h-full transition-all duration-1000" 
+                                        className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all duration-1000 rounded-full" 
                                         style={{ width: `${stats.teachers > 0 ? (stats.completedEvals / stats.teachers) * 100 : 0}%` }}
                                     ></div>
                                 </div>
-                                <span className="font-bold text-gray-700">
+                                <span className="font-bold text-2xl text-secondary-700">
                                     {stats.teachers > 0 ? Math.round((stats.completedEvals / stats.teachers) * 100) : 0}%
                                 </span>
                             </div>
-                            <p className="text-sm text-gray-500 mt-2">
-                                تم تقييم {stats.completedEvals} من أصل {stats.teachers} معلم
+                            <p className="text-sm text-secondary-500 mt-4 flex items-center gap-2">
+                                <CheckCircle2 size={16} className="text-green-500"/>
+                                تم تقييم <strong className="text-secondary-800">{stats.completedEvals}</strong> من أصل <strong className="text-secondary-800">{stats.teachers}</strong> معلم
                             </p>
                         </div>
                     </div>
@@ -263,7 +275,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                             count={stats.teachers}
                             description="المعلمين المطلوب تقييمهم"
                             onClick={() => onNavigate('teachers')}
-                            colorClass="bg-orange-600 text-white"
+                            gradient="bg-gradient-to-br from-orange-500 to-orange-700"
                         />
                         <QuickAccessCard 
                             icon={<Star size={32} />} 
@@ -285,43 +297,48 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
           case UserRole.TEACHER:
               return (
                 <div className="space-y-8 animate-fade-in">
-                    <div className="bg-white p-8 rounded-xl border border-gray-200 text-center shadow-sm max-w-3xl mx-auto">
-                        <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-400 border-4 border-white shadow-lg">
-                             <UserCheck size={48} />
+                    <div className="bg-white p-10 rounded-3xl border border-secondary-100 text-center shadow-card max-w-3xl mx-auto relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary-400 to-primary-600"></div>
+                        <div className="w-28 h-28 bg-secondary-50 rounded-full flex items-center justify-center mx-auto mb-6 text-secondary-400 border-4 border-white shadow-lg">
+                             <UserCheck size={56} />
                         </div>
-                        <h3 className="text-2xl font-bold text-gray-800 mb-2">أهلاً بك، {userName}</h3>
-                        <div className="flex justify-center gap-2 mb-8">
-                            <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                        <h3 className="text-3xl font-bold text-secondary-800 mb-2">أهلاً بك، {userName}</h3>
+                        <div className="flex justify-center gap-3 mb-10">
+                            <span className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium border border-blue-100">
                                 {teacherProfile?.specialty || 'جاري التحميل...'}
                             </span>
-                            <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm">
+                            <span className="bg-secondary-50 text-secondary-600 px-4 py-1.5 rounded-full text-sm font-medium border border-secondary-200">
                                 {teacherProfile?.schoolName || 'جاري التحميل...'}
                             </span>
                         </div>
                         
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-right">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-right">
                             <div 
                                 onClick={() => onNavigate('teacher_evaluation')}
-                                className="border border-gray-200 p-5 rounded-xl hover:border-primary-300 hover:bg-primary-50 transition-all cursor-pointer group"
+                                className="border border-secondary-200 p-6 rounded-2xl hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
                             >
-                                <div className="flex justify-between items-start mb-2">
-                                    <FileBarChart className="text-gray-400 group-hover:text-primary-600" />
-                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">اضغط للعرض</span>
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-primary-600 transition-colors">
+                                        <FileBarChart size={24} />
+                                    </div>
+                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">اضغط للعرض</span>
                                 </div>
-                                <h4 className="font-bold text-gray-800 group-hover:text-primary-800">بطاقة الأداء الوظيفي</h4>
-                                <p className="text-sm text-gray-500 mt-1">عرض التقييم، إرفاق الشواهد، وتقديم الاعتراضات</p>
+                                <h4 className="font-bold text-lg text-secondary-800 group-hover:text-primary-800 mb-1">بطاقة الأداء الوظيفي</h4>
+                                <p className="text-sm text-secondary-500 leading-relaxed">عرض التقييم، إرفاق الشواهد، وتقديم الاعتراضات</p>
                             </div>
                             
                             <div 
                                 onClick={() => onNavigate('teacher_profile')}
-                                className="border border-gray-200 p-5 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer group"
+                                className="border border-secondary-200 p-6 rounded-2xl hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
                             >
-                                <div className="flex justify-between items-start mb-2">
-                                    <UserCircle className="text-gray-400 group-hover:text-blue-600" />
-                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">تعديل</span>
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-blue-600 transition-colors">
+                                        <UserCircle size={24} />
+                                    </div>
+                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">تعديل</span>
                                 </div>
-                                <h4 className="font-bold text-gray-800 group-hover:text-blue-800">الملف الشخصي</h4>
-                                <p className="text-sm text-gray-500 mt-1">تحديث البيانات الشخصية وكلمة المرور</p>
+                                <h4 className="font-bold text-lg text-secondary-800 group-hover:text-blue-800 mb-1">الملف الشخصي</h4>
+                                <p className="text-sm text-secondary-500 leading-relaxed">تحديث البيانات الشخصية وكلمة المرور</p>
                             </div>
                         </div>
                     </div>
@@ -335,17 +352,18 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
 
   return (
     <div className="space-y-8">
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
+      {/* Hero Header */}
+      <div className="bg-gradient-to-br from-secondary-900 via-secondary-800 to-secondary-900 rounded-3xl p-10 text-white shadow-2xl relative overflow-hidden">
         <div className="relative z-10">
-            <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-                <div className="w-16 h-16 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center text-3xl font-bold shadow-inner">
+            <div className="flex flex-col md:flex-row md:items-center gap-6 mb-6">
+                <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-4xl font-bold shadow-inner border border-white/10">
                     {userName.charAt(0)}
                 </div>
                 <div>
-                    <h1 className="text-3xl font-bold mb-2">مرحباً، {userName}</h1>
-                    <div className="flex items-center gap-2 text-gray-300">
+                    <h1 className="text-4xl font-bold mb-3 tracking-tight">مرحباً، {userName}</h1>
+                    <div className="flex items-center gap-3 text-secondary-300">
                         {getRoleBadge()}
-                        <span className="text-sm border-r border-gray-600 pr-2 mr-2">
+                        <span className="text-sm border-r border-white/20 pr-3 mr-3 font-medium">
                             {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                     </div>
@@ -354,13 +372,16 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
         </div>
         
         {/* Decorative Background Elements */}
-        <div className="absolute left-0 top-0 h-full w-1/3 bg-white/5 skew-x-12 transform -translate-x-20"></div>
-        <div className="absolute right-0 bottom-0 h-64 w-64 bg-primary-500/10 rounded-full blur-3xl transform translate-x-10 translate-y-10"></div>
+        <div className="absolute -left-10 -top-10 h-64 w-64 bg-primary-500/20 rounded-full blur-[80px]"></div>
+        <div className="absolute right-0 bottom-0 h-96 w-96 bg-blue-500/10 rounded-full blur-[100px] transform translate-x-20 translate-y-20"></div>
+        <div className="absolute top-0 right-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
       </div>
 
-      <div className="px-1">
-        <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            {userRole === UserRole.TEACHER ? <UserCheck className="text-primary-600"/> : <ArrowRightLeft className="text-primary-600"/>}
+      <div className="px-2">
+        <h2 className="text-2xl font-bold text-secondary-800 mb-8 flex items-center gap-3">
+            <div className="p-2 bg-primary-100 text-primary-700 rounded-lg">
+                {userRole === UserRole.TEACHER ? <UserCheck size={24}/> : <ArrowRightLeft size={24}/>}
+            </div>
             {userRole === UserRole.TEACHER ? 'خدماتي' : 'لوحة التحكم والوصول السريع'}
         </h2>
         {renderContent()}
