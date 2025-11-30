@@ -492,7 +492,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                             {activeTab === 'details' && selectedEvalId && (
                                 <div className="space-y-6">
                                     {indicators.map((ind, idx) => {
-                                        const scoreData = scores[ind.id] || { score: 0, level: 0, notes: '', improvement: '' };
+                                        const scoreData = scores[ind.id] || { score: 0, level: 0, notes: '', improvement: '', strengths: '' };
                                         return (
                                             <div key={ind.id} className="border rounded-lg p-4 hover:border-primary-200 transition-colors">
                                                 <div className="flex justify-between items-start mb-3 border-b border-gray-100 pb-2">
@@ -504,11 +504,15 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">نقاط القوة / الملاحظات:</span>
-                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded">{scoreData.notes || 'لا يوجد'}</p>
+                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed">
+                                                            {scoreData.strengths || scoreData.notes || 'لا يوجد'}
+                                                        </p>
                                                     </div>
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">فرص التحسين:</span>
-                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded">{scoreData.improvement || 'لا يوجد'}</p>
+                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed">
+                                                            {scoreData.improvement || 'لا يوجد'}
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>

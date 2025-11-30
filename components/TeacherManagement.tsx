@@ -83,11 +83,16 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         // 1. Fetch Schools
         let schoolsQuery = supabase.from('schools').select('*').order('name');
         
-        // Priority: ManagerName > SchoolID
-        if (userRole === UserRole.PRINCIPAL && userName) {
-             // Multi-school support: Fetch all schools managed by this user
-             schoolsQuery = schoolsQuery.eq('manager_name', userName);
-        } else if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
+        // Priority: SchoolID (Session) > ManagerName (Fallback)
+        if (userRole === UserRole.PRINCIPAL) {
+             if (schoolId) {
+                 // Primary: Use active session school ID
+                 schoolsQuery = schoolsQuery.eq('id', schoolId);
+             } else if (userName) {
+                 // Fallback: Use name matching if schoolId is missing (rare)
+                 schoolsQuery = schoolsQuery.eq('manager_name', userName);
+             }
+        } else if (userRole === UserRole.EVALUATOR && schoolId) {
              // Fallback or specific restriction
              schoolsQuery = schoolsQuery.eq('id', schoolId);
         }
@@ -117,7 +122,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         if (userRole === UserRole.PRINCIPAL) {
             const mySchoolIds = mappedSchools.map(s => s.id);
             if (mySchoolIds.length > 0) {
-                // Fetch teachers from ALL managed schools
+                // Fetch teachers from ALL managed schools (usually just 1 active)
                 teachersQuery = teachersQuery.in('school_id', mySchoolIds);
             } else {
                  // No schools found for this principal, show nothing
