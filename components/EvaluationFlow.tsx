@@ -46,6 +46,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
   const getErrorMessage = (error: any): string => {
     if (!error) return 'حدث خطأ غير معروف';
+    if (error?.code === '23505') return 'يوجد تقييم مسجل بالفعل لهذا المعلم في هذه الفترة.';
     try {
         const str = JSON.stringify(error);
         if (str === '{}' || str === '[]') return 'خطأ غير محدد في النظام';
@@ -239,19 +240,51 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       }
   }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId]);
 
+  // Only autosave when in scoring step to avoid creating duplicate records during period selection
   useEffect(() => {
-    if (isLoading || indicators.length === 0) return; 
+    if (isLoading || indicators.length === 0 || step !== 'scoring') return; 
     const timeoutId = setTimeout(() => {
         if (period.name) saveToDb(false);
     }, 1500); 
     return () => clearTimeout(timeoutId);
-  }, [saveToDb, isLoading, indicators.length]);
+  }, [saveToDb, isLoading, indicators.length, step]);
 
   const handleStartEvaluation = async () => {
       if (!period.name) {
           alert('يرجى اختيار الفترة');
           return;
       }
+
+      // Check if evaluation already exists to avoid unique constraint error
+      if (!currentEvalId) {
+          setIsLoading(true);
+          try {
+              const { data: existingEval, error } = await supabase
+                  .from('evaluations')
+                  .select('*')
+                  .eq('teacher_id', teacherId)
+                  .eq('period_name', period.name)
+                  .maybeSingle();
+              
+              if (existingEval) {
+                  // Load existing data
+                  setCurrentEvalId(existingEval.id);
+                  setScores(existingEval.scores || {});
+                  setGeneralNotes(existingEval.general_notes || '');
+                  setPeriod(prev => ({ ...prev, date: existingEval.eval_date }));
+                  setStep('scoring'); // Just move to scoring, autosave will eventually sync if needed
+                  setIsLoading(false);
+                  return;
+              }
+          } catch (e) {
+              console.error("Check existing error", e);
+          } finally {
+              setIsLoading(false);
+          }
+      }
+
+      // If we are here, either it's a new record or we already have an ID.
+      // Call saveToDb to create record if new.
       const success = await saveToDb(true);
       if (success) {
           setStep('scoring');
