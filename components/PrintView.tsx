@@ -233,19 +233,16 @@ export default function PrintView({
                <div className="text-center w-1/3">
                   <p className="font-bold mb-8 text-base">المقيم</p>
                   <p className="mb-2 text-sm font-bold">{evaluatorName || '................................'}</p>
-                  <p className="text-sm text-gray-500">التوقيع</p>
                </div>
                
                <div className="text-center w-1/3">
                   <p className="font-bold mb-8 text-base">المعلم (للعلم)</p>
                   <p className="mb-2 text-sm font-bold">{teacherName}</p>
-                  <p className="text-sm text-gray-500">التوقيع</p>
                </div>
 
                <div className="text-center w-1/3">
                   <p className="font-bold mb-8 text-base">مدير المدرسة</p>
                   <p className="mb-2 text-sm font-bold">{managerName || '................................'}</p>
-                  <p className="text-sm text-gray-500">التوقيع</p>
                </div>
            </div>
         </div>

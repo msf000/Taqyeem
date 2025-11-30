@@ -80,7 +80,7 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
           // 1. Fetch Teacher Info & School
           const { data: teacherData, error: tError } = await supabase
               .from('teachers')
-              .select('*, schools(name, ministry_id, manager_name, evaluator_name)')
+              .select('*, schools(name, ministry_id, education_office, academic_year, manager_name, evaluator_name)')
               .eq('id', teacherId)
               .single();
           if(tError) throw tError;
@@ -121,6 +121,8 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
               teacherCategory: teacherData.category,
               schoolName: teacherData.schools?.name || '',
               ministryId: teacherData.schools?.ministry_id || '',
+              educationOffice: teacherData.schools?.education_office || '',
+              academicYear: teacherData.schools?.academic_year || '',
               managerName: teacherData.schools?.manager_name || '',
               evaluatorName: teacherData.schools?.evaluator_name || '',
               periodDate: evalData.eval_date || evalData.created_at,
