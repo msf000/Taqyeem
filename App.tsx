@@ -32,11 +32,12 @@ enum Tab {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   
-  const [currentView, setCurrentView] = useState<string>('main'); 
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
-  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(undefined);
+  // State Initialization with LocalStorage Persistence
+  const [activeTab, setActiveTab] = useState<Tab>(() => (localStorage.getItem('nizam_activeTab') as Tab) || Tab.DASHBOARD);
+  const [currentView, setCurrentView] = useState<string>(() => localStorage.getItem('nizam_currentView') || 'main');
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(() => localStorage.getItem('nizam_selectedTeacherId') || null);
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string | undefined>(() => localStorage.getItem('nizam_selectedEvaluationId') || undefined);
 
   // Multi-School & User Menu State
   const [availableProfiles, setAvailableProfiles] = useState<any[]>([]);
@@ -53,6 +54,34 @@ export default function App() {
           }
       }
   }, []);
+
+  // Persist Navigation State
+  useEffect(() => {
+      if (currentUser) {
+          localStorage.setItem('nizam_activeTab', activeTab);
+      }
+  }, [activeTab, currentUser]);
+
+  useEffect(() => {
+      if (currentUser) {
+          localStorage.setItem('nizam_currentView', currentView);
+      }
+  }, [currentView, currentUser]);
+
+  useEffect(() => {
+      if (currentUser) {
+          if (selectedTeacherId) localStorage.setItem('nizam_selectedTeacherId', selectedTeacherId);
+          else localStorage.removeItem('nizam_selectedTeacherId');
+      }
+  }, [selectedTeacherId, currentUser]);
+
+  useEffect(() => {
+      if (currentUser) {
+          if (selectedEvaluationId) localStorage.setItem('nizam_selectedEvaluationId', selectedEvaluationId);
+          else localStorage.removeItem('nizam_selectedEvaluationId');
+      }
+  }, [selectedEvaluationId, currentUser]);
+
 
   // Fetch ALL schools and roles for the current user (National ID OR Email)
   useEffect(() => {
@@ -161,6 +190,13 @@ export default function App() {
 
       setCurrentUser(newUserState);
       localStorage.setItem('nizam_user', JSON.stringify(newUserState));
+      
+      // Reset navigation state on profile switch to avoid confusion
+      localStorage.removeItem('nizam_activeTab');
+      localStorage.removeItem('nizam_currentView');
+      localStorage.removeItem('nizam_selectedTeacherId');
+      localStorage.removeItem('nizam_selectedEvaluationId');
+
       setShowUserMenu(false);
       setActiveTab(Tab.DASHBOARD);
       setCurrentView('main');
@@ -187,8 +223,11 @@ export default function App() {
     }
     setCurrentUser(userData);
     localStorage.setItem('nizam_user', JSON.stringify(userData));
+    // Reset Navigation on new login
     setActiveTab(Tab.DASHBOARD);
     setCurrentView('main');
+    setSelectedTeacherId(null);
+    setSelectedEvaluationId(undefined);
   };
 
   const handleLogout = () => {
@@ -197,6 +236,12 @@ export default function App() {
     setSelectedEvaluationId(undefined);
     setActiveTab(Tab.DASHBOARD);
     localStorage.removeItem('nizam_user');
+    
+    // Clear navigation persistence
+    localStorage.removeItem('nizam_activeTab');
+    localStorage.removeItem('nizam_currentView');
+    localStorage.removeItem('nizam_selectedTeacherId');
+    localStorage.removeItem('nizam_selectedEvaluationId');
   };
 
   const navigateToHistory = (teacherId: string) => {
@@ -307,7 +352,7 @@ export default function App() {
   // Helper for Nav Item
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab, icon: any, label: string }) => (
       <button 
-        onClick={() => { setActiveTab(tab); setCurrentView('main'); }}
+        onClick={() => { setActiveTab(tab); setCurrentView('main'); setSelectedTeacherId(null); }}
         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-200 font-medium text-[15px] ${
             activeTab === tab 
             ? 'text-primary-700 bg-primary-50 shadow-sm border border-primary-100' 
