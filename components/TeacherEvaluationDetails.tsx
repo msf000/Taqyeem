@@ -504,14 +504,16 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">نقاط القوة / الملاحظات:</span>
-                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed">
-                                                            {scoreData.strengths || scoreData.notes || 'لا يوجد'}
-                                                        </p>
+                                                        <div className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em]">
+                                                            {scoreData.strengths && <span className="block mb-2 font-medium">{scoreData.strengths}</span>}
+                                                            {scoreData.notes && <span className="block text-gray-600 text-xs mt-1 border-t border-gray-200 pt-1">{scoreData.notes}</span>}
+                                                            {!scoreData.strengths && !scoreData.notes && <span className="text-gray-400 italic">لا يوجد</span>}
+                                                        </div>
                                                     </div>
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">فرص التحسين:</span>
-                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed">
-                                                            {scoreData.improvement || 'لا يوجد'}
+                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em]">
+                                                            {scoreData.improvement || <span className="text-gray-400 italic">لا يوجد</span>}
                                                         </p>
                                                     </div>
                                                 </div>

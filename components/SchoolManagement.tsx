@@ -8,9 +8,10 @@ interface SchoolManagementProps {
   userRole?: UserRole;
   schoolId?: string;
   userName?: string;
+  nationalId?: string; // Added to support robust filtering
 }
 
-export default function SchoolManagement({ userRole, schoolId, userName }: SchoolManagementProps) {
+export default function SchoolManagement({ userRole, schoolId, userName, nationalId }: SchoolManagementProps) {
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -44,13 +45,27 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
       let query = supabase.from('schools').select('*').order('created_at', { ascending: false });
 
       // Filter for Principal
-      if (userRole === UserRole.PRINCIPAL && userName) {
-          // Fetch ALL schools managed by this user (by name), ignoring the single session schoolId
-          // This allows multi-school management
-          query = query.eq('manager_name', userName);
-      } else if (userRole === UserRole.PRINCIPAL && schoolId) {
-          // Fallback if name is missing
-          query = query.eq('id', schoolId);
+      if (userRole === UserRole.PRINCIPAL) {
+          // Construct robust OR filter: Match by Session ID OR National ID OR Name
+          const conditions = [];
+          
+          // 1. Session School ID (Most reliable)
+          if (schoolId) conditions.push(`id.eq.${schoolId}`);
+          
+          // 2. Manager National ID (Reliable if set)
+          if (nationalId) conditions.push(`manager_national_id.eq.${nationalId}`);
+          
+          // 3. Manager Name (Fallback/Legacy)
+          if (userName) conditions.push(`manager_name.eq.${userName}`);
+
+          if (conditions.length > 0) {
+              query = query.or(conditions.join(','));
+          } else {
+              // No identifiers available, show nothing
+              setSchools([]);
+              setIsLoading(false);
+              return;
+          }
       }
 
       const { data, error } = await query;
@@ -81,11 +96,11 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
 
   useEffect(() => {
     fetchSchools();
-  }, [userRole, schoolId, userName]);
+  }, [userRole, schoolId, userName, nationalId]);
 
   const handleOpenAdd = () => {
-      // If Principal, auto-set manager name
-      setFormData(userRole === UserRole.PRINCIPAL ? { managerName: userName } : {});
+      // If Principal, auto-set manager name and national ID
+      setFormData(userRole === UserRole.PRINCIPAL ? { managerName: userName, managerNationalId: nationalId } : {});
       setEditingId(null);
       setIsFormOpen(true);
   };
@@ -115,8 +130,9 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
 
     setIsSaving(true);
     try {
-      // Enforce manager name for principals to ensure they own the record
+      // Enforce manager name/ID for principals to ensure they own the record
       const manager = (userRole === UserRole.PRINCIPAL && userName) ? userName : formData.managerName;
+      const mgrId = (userRole === UserRole.PRINCIPAL && nationalId) ? nationalId : formData.managerNationalId;
 
       const payload = {
         name: formData.name,
@@ -126,7 +142,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
         education_office: formData.educationOffice, // Save
         academic_year: formData.academicYear, // Save
         manager_name: manager,
-        manager_national_id: formData.managerNationalId, 
+        manager_national_id: mgrId, 
         evaluator_name: formData.evaluatorName
       };
 
@@ -310,9 +326,8 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                 />
             </div>
             
-            {/* Show Manager ID field only if NOT Principal (Admin only) */}
-            {userRole !== UserRole.PRINCIPAL && (
-            <div>
+            {/* Show Manager ID field only if NOT Principal (Admin only) or allow reading if needed */}
+            <div className={userRole === UserRole.PRINCIPAL ? 'hidden' : ''}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">رقم هوية المدير</label>
                 <input 
                 type="text" 
@@ -322,7 +337,6 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                 onChange={e => setFormData({...formData, managerNationalId: e.target.value})}
                 />
             </div>
-            )}
 
             <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">اسم مقيم الأداء</label>

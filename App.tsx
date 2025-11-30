@@ -307,6 +307,7 @@ export default function App() {
             userRole={currentUser?.role}
             schoolId={currentUser?.schoolId}
             userName={currentUser?.name}
+            nationalId={currentUser?.nationalId} // Pass nationalId to allow robust principal filtering
         />;
       case Tab.TEACHERS:
         return <TeacherManagement 
