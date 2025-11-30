@@ -44,15 +44,13 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
       let query = supabase.from('schools').select('*').order('created_at', { ascending: false });
 
       // Filter for Principal
-      if (userRole === UserRole.PRINCIPAL) {
-          // Priority 1: Linked School ID (from Teacher profile or User profile)
-          if (schoolId) {
-              query = query.eq('id', schoolId);
-          } 
-          // Priority 2: Fallback to Name match (Legacy)
-          else if (userName) {
-              query = query.eq('manager_name', userName);
-          }
+      if (userRole === UserRole.PRINCIPAL && userName) {
+          // Fetch ALL schools managed by this user (by name), ignoring the single session schoolId
+          // This allows multi-school management
+          query = query.eq('manager_name', userName);
+      } else if (userRole === UserRole.PRINCIPAL && schoolId) {
+          // Fallback if name is missing
+          query = query.eq('id', schoolId);
       }
 
       const { data, error } = await query;
@@ -200,7 +198,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <SchoolIcon className="text-primary-600" />
-          {userRole === UserRole.PRINCIPAL ? 'مدارسي' : 'إدارة المدارس'}
+          {userRole === UserRole.PRINCIPAL ? 'إدارة مدارسي' : 'إدارة المدارس'}
         </h2>
         
         {/* Show Add button for Admin AND Principal */}
@@ -431,7 +429,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                       <Edit2 size={18} />
                   </button>
                   
-                  {/* Allow Deletion for Principal if they added it (logic check: if they see the delete button) */}
+                  {/* Allow Deletion for Principal if they added it */}
                   <div className="w-px bg-gray-200 mx-1"></div>
                   <button 
                     onClick={() => handleDeleteSchool(school.id)} 

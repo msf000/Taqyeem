@@ -69,12 +69,13 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         // 1. Fetch Schools
         let schoolsQuery = supabase.from('schools').select('*').order('name');
         
-        // Priority: SchoolID > ManagerName
-        if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
-             // Restrict to specific school for Principal (by ID fallback) and Evaluator
-             schoolsQuery = schoolsQuery.eq('id', schoolId);
-        } else if (userRole === UserRole.PRINCIPAL && userName) {
+        // Priority: ManagerName > SchoolID
+        if (userRole === UserRole.PRINCIPAL && userName) {
+             // Multi-school support: Fetch all schools managed by this user
              schoolsQuery = schoolsQuery.eq('manager_name', userName);
+        } else if ((userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schoolId) {
+             // Fallback or specific restriction
+             schoolsQuery = schoolsQuery.eq('id', schoolId);
         }
 
         const { data: schoolsData, error: schoolsError } = await schoolsQuery;
@@ -102,13 +103,14 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         if (userRole === UserRole.PRINCIPAL) {
             const mySchoolIds = mappedSchools.map(s => s.id);
             if (mySchoolIds.length > 0) {
+                // Fetch teachers from ALL managed schools
                 teachersQuery = teachersQuery.in('school_id', mySchoolIds);
             } else {
                  // No schools found for this principal, show nothing
                  teachersQuery = teachersQuery.eq('id', '00000000-0000-0000-0000-000000000000');
             }
         } else if (userRole === UserRole.EVALUATOR && schoolId) {
-            // STRICT FILTER FOR EVALUATOR: Only teachers in their school
+            // STRICT FILTER FOR EVALUATOR: Only teachers in their assigned school
             teachersQuery = teachersQuery.eq('school_id', schoolId);
         }
 
@@ -127,7 +129,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 status = evalRecord.status === 'completed' ? EvaluationStatus.COMPLETED : EvaluationStatus.DRAFT;
             }
 
-            // Normalize roles: prioritize 'roles' array, fallback to single 'role'
+            // Normalize roles
             let roles: UserRole[] = [];
             if (t.roles && Array.isArray(t.roles) && t.roles.length > 0) {
                 roles = t.roles;
@@ -143,7 +145,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 nationalId: t.national_id,
                 specialty: t.specialty,
                 category: t.category as TeacherCategory,
-                role: roles[0], // Keep for backward compatibility/sorting
+                role: roles[0],
                 roles: roles,
                 mobile: t.mobile,
                 schoolId: t.school_id,
@@ -240,7 +242,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
       }
 
       let targetSchoolId = newTeacher.schoolId;
-      if (!targetSchoolId && (userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schools.length === 1) {
+      // Auto-select if only one school
+      if (!targetSchoolId && schools.length === 1) {
           targetSchoolId = schools[0].id;
       }
 
@@ -607,7 +610,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                     </div>
                     
                     <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
-                        {schools.length > 0 && (
+                        {/* Show school filter even for Principals if they manage multiple schools */}
+                        {schools.length > 1 && (
                             <select 
                                 className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[140px]"
                                 value={filterSchoolId} onChange={(e) => setFilterSchoolId(e.target.value)}
@@ -735,7 +739,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام. يمكن إسناد أكثر من صلاحية لنفس المعلم (مثلاً معلم ومقيم في آن واحد).</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {(userRole !== UserRole.PRINCIPAL && userRole !== UserRole.EVALUATOR || schools.length > 1) && (
+                 {/* Only show School selection if Admin OR Principal manages multiple schools */}
+                 {(userRole === UserRole.ADMIN || (userRole === UserRole.PRINCIPAL && schools.length > 1)) && (
                      <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة <span className="text-red-500">*</span></label>
                         <select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 bg-white" value={newTeacher.schoolId || ''} onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}>
@@ -744,8 +749,11 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                         </select>
                      </div>
                  )}
-                 {(userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) && schools.length === 1 && (
-                     <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2"><CheckCircle className="text-blue-600" size={20}/><span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span></div>
+                 {(schools.length === 1 && !newTeacher.schoolId) && (
+                     <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2">
+                        <CheckCircle className="text-blue-600" size={20}/>
+                        <span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span>
+                     </div>
                  )}
                  {schools.length === 0 && (
                      <div className="md:col-span-2 bg-red-50 p-3 rounded-lg border border-red-100 flex items-center gap-2"><XCircle className="text-red-600" size={20}/><span className="text-sm text-red-800 font-medium">عفواً، لا توجد مدارس مسجلة.</span></div>
