@@ -39,6 +39,8 @@ export interface School {
   stage: string;
   type: string;
   ministryId: string;
+  educationOffice?: string; // Added
+  academicYear?: string; // Added
   managerName: string;
   managerNationalId?: string; // Added field
   evaluatorName: string;

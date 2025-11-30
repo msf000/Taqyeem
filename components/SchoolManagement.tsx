@@ -64,8 +64,10 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
         stage: item.stage,
         type: item.type,
         ministryId: item.ministry_id,
+        educationOffice: item.education_office, // Map new field
+        academicYear: item.academic_year, // Map new field
         managerName: item.manager_name,
-        managerNationalId: item.manager_national_id, // Map new field
+        managerNationalId: item.manager_national_id, 
         evaluatorName: item.evaluator_name
       }));
 
@@ -94,6 +96,8 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
           ministryId: school.ministryId,
           stage: school.stage,
           type: school.type,
+          educationOffice: school.educationOffice, // Edit
+          academicYear: school.academicYear, // Edit
           managerName: school.managerName,
           managerNationalId: school.managerNationalId,
           evaluatorName: school.evaluatorName
@@ -119,8 +123,10 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
         stage: formData.stage,
         type: formData.type,
         ministry_id: formData.ministryId,
+        education_office: formData.educationOffice, // Save
+        academic_year: formData.academicYear, // Save
         manager_name: manager,
-        manager_national_id: formData.managerNationalId, // Save new field
+        manager_national_id: formData.managerNationalId, 
         evaluator_name: formData.evaluatorName
       };
 
@@ -249,6 +255,26 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                 />
             </div>
             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">إدارة التعليم</label>
+                <input 
+                type="text" 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                value={formData.educationOffice || ''}
+                onChange={e => setFormData({...formData, educationOffice: e.target.value})}
+                placeholder="مثال: إدارة تعليم الرياض"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">العام الدراسي</label>
+                <input 
+                type="text" 
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                value={formData.academicYear || ''}
+                onChange={e => setFormData({...formData, academicYear: e.target.value})}
+                placeholder="مثال: 1445 هـ"
+                />
+            </div>
+            <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">المرحلة التعليمية</label>
                 <select 
                 className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
@@ -367,6 +393,14 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                               <p className="font-medium">{viewSchool.ministryId}</p>
                           </div>
                           <div>
+                              <label className="text-xs text-gray-500">إدارة التعليم</label>
+                              <p className="font-medium">{viewSchool.educationOffice || '-'}</p>
+                          </div>
+                          <div>
+                              <label className="text-xs text-gray-500">العام الدراسي</label>
+                              <p className="font-medium">{viewSchool.academicYear || '-'}</p>
+                          </div>
+                          <div>
                               <label className="text-xs text-gray-500">المرحلة</label>
                               <p className="font-medium">{viewSchool.stage}</p>
                           </div>
@@ -430,9 +464,9 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                   <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">{school.ministryId}</span>
                 </div>
                 <div className="flex flex-wrap gap-4 text-sm text-gray-500 mr-11">
+                  {school.educationOffice && <span className="flex items-center gap-1">إدارة: {school.educationOffice}</span>}
+                  {school.academicYear && <span className="flex items-center gap-1">عام: {school.academicYear}</span>}
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400"></span> المدير: {school.managerName || 'غير محدد'}</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400"></span> المقيم: {school.evaluatorName || 'غير محدد'}</span>
-                  <span>النوع: {school.type}</span>
                 </div>
               </div>
               

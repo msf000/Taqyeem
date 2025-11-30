@@ -57,7 +57,7 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script - Updated with ASPIRATION category
+  // SQL Script - Updated with EDUCATION OFFICE and ACADEMIC YEAR
   const fullSchemaScript = `
 -- ==========================================
 -- 1. تحديث هيكلية تعدد الصلاحيات (سجل واحد، أدوار متعددة)
@@ -68,6 +68,10 @@ ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] DEFAULT '{}';
 
 -- إضافة عمود رقم هوية المدير لجدول المدارس
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS manager_national_id text;
+
+-- إضافة أعمدة إدارة التعليم والعام الدراسي لجدول المدارس
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS education_office text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS academic_year text;
 
 -- نقل البيانات القديمة (role وحيد) إلى المصفوفة الجديدة
 UPDATE teachers 
@@ -101,7 +105,7 @@ ALTER TABLE school_events ADD COLUMN IF NOT EXISTS school_id uuid REFERENCES sch
 -- تحديث الجدول لإضافة فئة 'aspiration'
 create table if not exists feedback_bank (
   id uuid default gen_random_uuid() primary key,
-  category text, -- constraint removed to allow flexibility or updated below
+  category text, 
   phrase_text text not null,
   tags text[], 
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -251,6 +255,8 @@ create table if not exists schools (
   stage text,
   type text,
   ministry_id text,
+  education_office text,
+  academic_year text,
   manager_name text,
   manager_national_id text,
   evaluator_name text,
@@ -1118,7 +1124,7 @@ NOTIFY pgrst, 'reload schema';
         {/* --- DATABASE TAB --- */}
         {activeTab === 'database' && (
             <div className="space-y-6">
-                {/* ... Backup UI ... */}
+                {/* Backup UI */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                     <div className="flex items-start gap-4 mb-6">
                         <div className="p-3 bg-blue-50 rounded-lg text-blue-600">

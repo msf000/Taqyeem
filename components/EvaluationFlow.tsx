@@ -38,8 +38,10 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       schoolId: string | null;
       schoolName: string;
       ministryId: string;
+      educationOffice: string;
+      academicYear: string;
   }>({
-      name: '', nationalId: '', specialty: '', category: '', schoolId: null, schoolName: '', ministryId: ''
+      name: '', nationalId: '', specialty: '', category: '', schoolId: null, schoolName: '', ministryId: '', educationOffice: '', academicYear: ''
   });
 
   const [indicators, setIndicators] = useState<EvaluationIndicator[]>([]);
@@ -77,7 +79,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
         // Fetch Teacher Data
         const { data: teacherData, error: teacherError } = await supabase
             .from('teachers')
-            .select('*, schools(name, ministry_id)')
+            .select('*, schools(name, ministry_id, education_office, academic_year)')
             .eq('id', teacherId)
             .single();
         
@@ -91,7 +93,9 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                 category: teacherData.category,
                 schoolId: teacherData.school_id || null,
                 schoolName: teacherData.schools?.name || '',
-                ministryId: teacherData.schools?.ministry_id || ''
+                ministryId: teacherData.schools?.ministry_id || '',
+                educationOffice: teacherData.schools?.education_office || '',
+                academicYear: teacherData.schools?.academic_year || ''
             });
         }
 
@@ -414,7 +418,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   };
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>;
-  if (step === 'print') return <PrintView teacherName={teacherDetails.name} teacherNationalId={teacherDetails.nationalId} teacherSpecialty={teacherDetails.specialty} teacherCategory={teacherDetails.category} schoolName={teacherDetails.schoolName} ministryId={teacherDetails.ministryId} periodDate={period.date} totalScore={calculateTotal()} scores={scores} indicators={indicators} onBack={() => setStep('summary')} />;
+  if (step === 'print') return <PrintView teacherName={teacherDetails.name} teacherNationalId={teacherDetails.nationalId} teacherSpecialty={teacherDetails.specialty} teacherCategory={teacherDetails.category} schoolName={teacherDetails.schoolName} ministryId={teacherDetails.ministryId} educationOffice={teacherDetails.educationOffice} academicYear={teacherDetails.academicYear} periodDate={period.date} totalScore={calculateTotal()} scores={scores} indicators={indicators} onBack={() => setStep('summary')} />;
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-20">

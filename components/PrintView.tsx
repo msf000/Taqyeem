@@ -10,6 +10,8 @@ interface PrintViewProps {
   teacherCategory: string;
   schoolName: string;
   ministryId: string;
+  educationOffice?: string; // Added prop
+  academicYear?: string; // Added prop
   managerName?: string;
   evaluatorName?: string;
   periodDate: string;
@@ -26,6 +28,8 @@ export default function PrintView({
     teacherCategory,
     schoolName,
     ministryId,
+    educationOffice,
+    academicYear,
     managerName,
     evaluatorName,
     periodDate, 
@@ -52,7 +56,7 @@ export default function PrintView({
       const ratio = score / weight;
       if (ratio >= 0.9) return "مثالي";
       if (ratio >= 0.8) return "تخطى التوقعات";
-      if (ratio >= 0.6) return "وافق التوقعات"; // Adjusted to standard range
+      if (ratio >= 0.6) return "وافق التوقعات"; 
       if (ratio >= 0.4) return "بحاجة إلى تطوير";
       return "غير مرضي";
   };
@@ -84,6 +88,9 @@ export default function PrintView({
             break-inside: avoid;
             page-break-inside: avoid;
           }
+          .break-before-page {
+            page-break-before: always;
+          }
         }
       `}</style>
 
@@ -105,17 +112,18 @@ export default function PrintView({
            <div className="text-center w-1/3">
               <h1 className="text-lg font-bold mb-1">المملكة العربية السعودية</h1>
               <h2 className="text-base font-medium mb-1">وزارة التعليم</h2>
-              <h3 className="text-sm">إدارة التعليم</h3>
+              <h3 className="text-sm">{educationOffice || 'إدارة التعليم'}</h3>
            </div>
            <div className="text-center w-1/3 pt-2">
               <div className="inline-block border-2 border-black px-6 py-2 rounded-lg">
                   <h2 className="text-xl font-black">بطاقة الأداء الوظيفي</h2>
               </div>
            </div>
-           <div className="text-left w-1/3 text-sm space-y-1 pt-1 pl-2">
-              <p><span className="font-bold ml-1">التاريخ:</span> {periodDate}</p>
-              <p><span className="font-bold ml-1">المدرسة:</span> {schoolName}</p>
-              <p><span className="font-bold ml-1">الرقم الوزاري:</span> {ministryId}</p>
+           <div className="text-left w-1/3 text-sm space-y-1 pt-1 pl-2" dir="ltr">
+              <p className="text-right"><span className="font-bold ml-1">التاريخ:</span> {periodDate}</p>
+              <p className="text-right"><span className="font-bold ml-1">المدرسة:</span> {schoolName}</p>
+              {academicYear && <p className="text-right"><span className="font-bold ml-1">العام الدراسي:</span> {academicYear}</p>}
+              <p className="text-right"><span className="font-bold ml-1">الرقم الوزاري:</span> {ministryId}</p>
            </div>
         </div>
 
@@ -169,16 +177,19 @@ export default function PrintView({
                  })}
                  <tr className="font-black bg-gray-100 text-base border-t-2 border-black">
                     <td className="border border-black p-3 text-right pr-4" colSpan={3}>المجموع الكلي</td>
-                    <td className="border border-black p-3 text-lg">{totalScore.toFixed(1)}</td>
+                    <td className="border border-black p-3 text-lg">
+                        {totalScore.toFixed(1)} 
+                        <span className="text-xs font-normal mr-2">({getMasteryLevel(totalScore)})</span>
+                    </td>
                     <td className="border border-black p-3">{getMasteryLevel(totalScore)}</td>
                  </tr>
               </tbody>
            </table>
         </div>
 
-        {/* Detailed Indicators with Strengths/Weaknesses */}
-        <div className="space-y-6">
-           <h3 className="font-bold mb-2 text-lg border-r-4 border-black pr-2">تفاصيل الأداء (نقاط القوة والتحسين)</h3>
+        {/* Detailed Indicators with Strengths/Weaknesses - Starts on Page 2 */}
+        <div className="space-y-6 break-before-page">
+           <h3 className="font-bold mb-2 text-lg border-r-4 border-black pr-2 pt-4">تفاصيل الأداء (نقاط القوة والتحسين)</h3>
            {indicators.map((ind, idx) => (
               <div key={ind.id} className="border border-black rounded-lg break-inside-avoid overflow-hidden">
                  <div className="flex justify-between items-center bg-gray-100 p-2 border-b border-black">
@@ -234,7 +245,7 @@ export default function PrintView({
                <div className="text-center w-1/3">
                   <p className="font-bold mb-8 text-base">مدير المدرسة</p>
                   <p className="mb-2 text-sm font-bold">{managerName || '................................'}</p>
-                  <p className="text-sm text-gray-500">التوقيع والختم</p>
+                  <p className="text-sm text-gray-500">التوقيع</p>
                </div>
            </div>
         </div>

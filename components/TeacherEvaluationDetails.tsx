@@ -36,6 +36,8 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
       category: string;
       nationalId: string;
       ministryId: string;
+      educationOffice: string;
+      academicYear: string;
       managerName: string;
       evaluatorName: string;
   } | null>(null);
@@ -70,7 +72,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
             // Fetch Teacher with School Details (Manager & Evaluator)
             const { data: teacherData, error: teacherError } = await supabase
                 .from('teachers')
-                .select('*, schools(name, ministry_id, manager_name, evaluator_name)')
+                .select('*, schools(name, ministry_id, education_office, academic_year, manager_name, evaluator_name)')
                 .eq('id', teacherId)
                 .single();
             
@@ -83,6 +85,8 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                 category: teacherData.category,
                 nationalId: teacherData.national_id,
                 ministryId: teacherData.schools?.ministry_id || '',
+                educationOffice: teacherData.schools?.education_office || '',
+                academicYear: teacherData.schools?.academic_year || '',
                 managerName: teacherData.schools?.manager_name || '',
                 evaluatorName: teacherData.schools?.evaluator_name || ''
             });
@@ -300,6 +304,8 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
         teacherCategory={teacherInfo.category}
         schoolName={teacherInfo.schoolName}
         ministryId={teacherInfo.ministryId}
+        educationOffice={teacherInfo.educationOffice}
+        academicYear={teacherInfo.academicYear}
         managerName={teacherInfo.managerName}
         evaluatorName={teacherInfo.evaluatorName}
         periodDate={evaluation.date || new Date().toLocaleDateString('ar-SA')}
