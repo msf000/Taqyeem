@@ -90,7 +90,7 @@ export interface EvaluationScore {
   indicatorId: string;
   level: number; // 1-5 (Likert Scale Input)
   score: number; // Calculated Weighted Score
-  subScores?: number[]; 
+  subScores?: Record<number, number>; // Index of criteria -> Score (1-5)
   evidence: string;
   notes: string;
   improvement: string; // Opportunities for improvement
