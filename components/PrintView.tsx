@@ -47,6 +47,16 @@ export default function PrintView({
     return "غير مرضي";
   };
 
+  const getIndicatorMastery = (score: number, weight: number) => {
+      if (weight === 0) return "-";
+      const ratio = score / weight;
+      if (ratio >= 0.9) return "مثالي";
+      if (ratio >= 0.8) return "تخطى التوقعات";
+      if (ratio >= 0.6) return "وافق التوقعات"; // Adjusted to standard range
+      if (ratio >= 0.4) return "بحاجة إلى تطوير";
+      return "غير مرضي";
+  };
+
   return (
     <div className="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
       <style>{`
@@ -151,7 +161,9 @@ export default function PrintView({
                             <td className="border border-black p-2 bg-gray-50">{ind.weight}</td>
                             <td className="border border-black p-2 font-bold">{data.level} / 5</td>
                             <td className="border border-black p-2 font-bold bg-gray-50">{data.score % 1 === 0 ? data.score : data.score.toFixed(1)}</td>
-                            <td className="border border-black p-2 text-xs">{data.score > 0 ? getMasteryLevel((data.score / ind.weight) * 100) : '-'}</td>
+                            <td className="border border-black p-2 text-xs font-bold">
+                                {data.score > 0 ? getIndicatorMastery(data.score, ind.weight) : '-'}
+                            </td>
                         </tr>
                     )
                  })}
@@ -180,8 +192,8 @@ export default function PrintView({
                  <div className="p-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Strengths Section */}
                     <div className="border-l-0 md:border-l border-black pl-0 md:pl-4">
-                       <p className="font-bold text-xs mb-1 underline">نقاط القوة:</p>
-                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify">
+                       <p className="font-bold text-xs mb-1 underline">نقاط القوة / تطلعات مستقبلية:</p>
+                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify whitespace-pre-line">
                           {scores[ind.id]?.strengths || '---'}
                        </p>
                     </div>
@@ -189,7 +201,7 @@ export default function PrintView({
                     {/* Improvement Section */}
                     <div>
                        <p className="font-bold text-xs mb-1 underline">فرص التحسين (الخطة):</p>
-                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify">
+                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify whitespace-pre-line">
                           {scores[ind.id]?.improvement || '---'}
                        </p>
                     </div>

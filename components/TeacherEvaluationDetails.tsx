@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List, Trash2 } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, EvaluationData, EvaluationStatus } from '../types';
@@ -277,11 +276,11 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
   };
 
   const getMasteryLevel = (totalScore: number) => {
-    if (totalScore >= 90) return "متميز";
-    if (totalScore >= 80) return "متقدم";
-    if (totalScore >= 70) return "متمكن";
-    if (totalScore >= 50) return "مبتدئ";
-    return "غير مجتاز";
+    if (totalScore >= 90) return "مثالي";
+    if (totalScore >= 80) return "تخطى التوقعات";
+    if (totalScore >= 70) return "وافق التوقعات";
+    if (totalScore >= 50) return "بحاجة إلى تطوير";
+    return "غير مرضي";
   };
 
   const getStatusBadge = (status: string) => {

@@ -60,11 +60,13 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const getIndicatorMasteryLevel = (score: number, weight: number) => {
       if (weight === 0) return { label: '-', color: 'bg-gray-100 text-gray-500' };
       const ratio = score / weight;
-      if (ratio >= 0.9) return { label: 'متميز (5)', color: 'bg-green-100 text-green-700 border-green-200' };
-      if (ratio >= 0.8) return { label: 'متقدم (4)', color: 'bg-blue-100 text-blue-700 border-blue-200' };
-      if (ratio >= 0.7) return { label: 'متمكن (3)', color: 'bg-purple-100 text-purple-700 border-purple-200' };
-      if (ratio >= 0.5) return { label: 'مبتدئ (2)', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' };
-      return { label: 'غير مجتاز (1)', color: 'bg-red-100 text-red-700 border-red-200' };
+      
+      // New Classification Scale
+      if (ratio >= 0.9) return { label: 'مثالي (5)', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+      if (ratio >= 0.8) return { label: 'تخطى التوقعات (4)', color: 'bg-blue-100 text-blue-800 border-blue-200' };
+      if (ratio >= 0.6) return { label: 'وافق التوقعات (3)', color: 'bg-purple-100 text-purple-800 border-purple-200' };
+      if (ratio >= 0.4) return { label: 'بحاجة إلى تطوير (2)', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
+      return { label: 'غير مرضي (1)', color: 'bg-red-100 text-red-800 border-red-200' };
   };
 
   // --- Fetch Data ---
@@ -274,6 +276,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       if (category === 'strength') return "نموذج يُحتذى به في هذا المجال ويظهر تمكناً عالياً.";
       if (category === 'improvement') return "يحتاج إلى تطوير مهاراته في هذا الجانب لتناسب الموقف التعليمي.";
       if (category === 'action') return "الاطلاع على الأدلة الإجرائية وتطبيق الممارسات الصحيحة.";
+      if (category === 'aspiration') return "نقل الخبرة للزملاء والمشاركة في المبادرات التطويرية."; // Default aspiration
 
       return "";
   };
@@ -306,21 +309,39 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
           newMainScore = value; 
       }
 
-      // 3. Smart Text Generation Logic (DB-Driven)
+      // 3. Smart Text Generation Logic (DB-Driven & Pedagogically Enhanced)
       let autoStrengths = '';
       let autoImprovement = '';
 
-      // Logic: If average level >= 4, show strengths. If <= 3, show improvements.
+      // High Performance (Level 4-5)
+      // Logic: Strengths = "Role Model...", Improvement = "Future Aspirations"
       if (newLevel >= 4) {
-          const phrase = getFeedbackForIndicator(indicator.text, 'strength');
-          autoStrengths = `• ${phrase}`;
+          const strengthPhrase = getFeedbackForIndicator(indicator.text, 'strength');
+          const aspirationPhrase = getFeedbackForIndicator(indicator.text, 'aspiration');
+          
+          autoStrengths = `• ${strengthPhrase}`;
+          // Instead of empty improvement, suggest Aspirations
+          autoImprovement = `🌟 تطلعات مستقبلية (إثراء):\n• ${aspirationPhrase}`;
       } 
       
-      if (newLevel <= 3 && newLevel > 0) {
+      // Low Performance (Level 1-2)
+      // Logic: Improvement = "Diagnostic + Action", Strengths = "Potential/Target Goals"
+      else if (newLevel <= 2 && newLevel > 0) {
           const improvementPhrase = getFeedbackForIndicator(indicator.text, 'improvement');
           const actionPhrase = getFeedbackForIndicator(indicator.text, 'action');
+          // Reuse strength phrase but frame it as a goal
+          const strengthGoalPhrase = getFeedbackForIndicator(indicator.text, 'strength').replace('نموذج يُحتذى به', 'نسعى للوصول إلى نموذج');
           
           autoImprovement = `🔍 فرص التحسين (التشخيص):\n• ${improvementPhrase}\n\n🛠️ خطة الدعم والتوجيه (الإجراءات):\n1. ${actionPhrase}`;
+          // Instead of empty strengths, suggest Future Goals
+          autoStrengths = `💡 نقاط قوة مستهدفة (تطلعات):\n• ${strengthGoalPhrase}`;
+      }
+      
+      // Average Performance (Level 3)
+      // Standard behavior
+      else if (newLevel === 3) {
+           autoStrengths = "أداء جيد يتوافق مع التوقعات الأساسية، مع وجود فرص للتحسين.";
+           autoImprovement = "تعزيز الممارسات الحالية للوصول إلى مستوى الإتقان.";
       }
 
       setScores(prev => ({
@@ -627,7 +648,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                 <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-gray-100">
                                     <div>
                                         <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
-                                            <span>نقاط القوة (توليد تلقائي ذكي)</span>
+                                            <span>نقاط القوة / أهداف مستقبلية (تلقائي)</span>
                                             <Award size={14} className="text-green-600"/>
                                         </label>
                                         <textarea 
@@ -639,12 +660,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center justify-between">
-                                            <span>الدعم والتوجيه (خطة التطوير)</span>
+                                            <span>خطة التطوير / تطلعات إثرائية</span>
                                             <HeartHandshake size={14} className="text-yellow-600"/>
                                         </label>
                                         <textarea 
                                             className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-yellow-500 outline-none resize-none leading-relaxed"
-                                            placeholder="سيتم كتابة خطة التطوير (تشخيص + إجراء + مؤشر)..."
+                                            placeholder="سيتم كتابة الخطة أو التطلعات المستقبلية..."
                                             value={scores[activeInd.id]?.improvement || ''}
                                             onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
                                         />
