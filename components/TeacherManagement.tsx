@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, UserPlus } from 'lucide-react';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 import readXlsxFile from 'read-excel-file';
@@ -27,11 +27,12 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
 
-  // Filtering State
+  // Filtering & Sorting State
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSchoolId, setFilterSchoolId] = useState('');
   const [filterSpecialty, setFilterSpecialty] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
   // Add Teacher Form State
   const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ category: TeacherCategory.TEACHER, roles: [UserRole.TEACHER] });
@@ -40,6 +41,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
   // Import Logic State
   const [importStep, setImportStep] = useState<'upload' | 'results'>('upload');
+  const [isImporting, setIsImporting] = useState(false); // New loading state for import
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [importTargetSchoolId, setImportTargetSchoolId] = useState<string>('');
 
@@ -330,7 +332,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     const file = e.target.files?.[0];
     if (!file) return;
     
-    setImportStep('results');
+    // Start Loading
+    setIsImporting(true);
     setImportResults([]);
     const results: ImportResult[] = [];
 
@@ -355,6 +358,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             setImportStep('upload'); 
             return; 
         }
+
+        // Move to results view, but show loading indicator
+        setImportStep('results');
 
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
@@ -401,6 +407,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         setImportStep('upload');
     } finally {
         e.target.value = '';
+        setIsImporting(false); // Stop loading
     }
   };
 
@@ -440,6 +447,46 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     return matchesSearch && matchesSchool && matchesSpecialty && matchesStatus;
   });
 
+  // Sorting Logic
+  const sortedTeachers = [...filteredTeachers].sort((a, b) => {
+      let aValue: any = '';
+      let bValue: any = '';
+
+      switch(sortConfig.key) {
+          case 'name':
+              aValue = a.name; bValue = b.name;
+              break;
+          case 'nationalId':
+              aValue = a.nationalId; bValue = b.nationalId;
+              break;
+          case 'specialty':
+              aValue = a.specialty; bValue = b.specialty;
+              break;
+          case 'category':
+              aValue = a.category; bValue = b.category;
+              break;
+          case 'school':
+              aValue = schools.find(s=>s.id===a.schoolId)?.name || ''; 
+              bValue = schools.find(s=>s.id===b.schoolId)?.name || '';
+              break;
+          default:
+              return 0;
+      }
+
+      if (sortConfig.direction === 'asc') {
+          return String(aValue).localeCompare(String(bValue), 'ar');
+      } else {
+          return String(bValue).localeCompare(String(aValue), 'ar');
+      }
+  });
+
+  const handleSort = (key: string) => {
+      setSortConfig(current => ({
+          key,
+          direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+      }));
+  };
+
   const clearFilters = () => {
       setSearchTerm('');
       setFilterSchoolId('');
@@ -448,6 +495,23 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   };
 
   const hasActiveFilters = searchTerm || filterSchoolId || filterSpecialty || filterStatus;
+
+  const renderSortIcon = (key: string) => {
+      if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 opacity-50" />;
+      return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-primary-600"/> : <ArrowDown size={14} className="text-primary-600"/>;
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
+      <th 
+        className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors select-none group"
+        onClick={() => handleSort(sortKey)}
+      >
+          <div className="flex items-center gap-2">
+              {label}
+              {renderSortIcon(sortKey)}
+          </div>
+      </th>
+  );
 
   return (
     <div className="space-y-6">
@@ -578,17 +642,17 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 <table className="w-full text-right">
                     <thead className="bg-gray-50 text-gray-600 text-sm font-semibold">
                         <tr>
-                            <th className="px-6 py-4">الاسم الكامل</th>
-                            <th className="px-6 py-4">رقم الهوية</th>
-                            <th className="px-6 py-4">فئة المعلم</th>
+                            <SortableHeader label="الاسم الكامل" sortKey="name" />
+                            <SortableHeader label="رقم الهوية" sortKey="nationalId" />
+                            <SortableHeader label="فئة المعلم" sortKey="category" />
                             <th className="px-6 py-4">الصلاحيات</th>
-                            <th className="px-6 py-4">التخصص</th>
-                            <th className="px-6 py-4">المدرسة</th>
+                            <SortableHeader label="التخصص" sortKey="specialty" />
+                            <SortableHeader label="المدرسة" sortKey="school" />
                             <th className="px-6 py-4 text-center">الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {filteredTeachers.length === 0 ? (
+                        {sortedTeachers.length === 0 ? (
                             <tr>
                                 <td colSpan={7} className="text-center py-8 text-gray-500 flex flex-col items-center justify-center gap-2">
                                     <Search size={32} className="text-gray-300" />
@@ -596,7 +660,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                 </td>
                             </tr>
                         ) : (
-                            filteredTeachers.map(teacher => {
+                            sortedTeachers.map(teacher => {
                                 const schoolName = schools.find(s => s.id === teacher.schoolId)?.name || '-';
                                 return (
                                     <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
@@ -775,24 +839,34 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
              </div>
 
              <div className={`bg-white p-12 rounded-xl shadow-sm border text-center border-dashed border-2 transition-colors ${!importTargetSchoolId ? 'border-gray-200 opacity-50 cursor-not-allowed' : 'border-gray-300 hover:border-primary-500'}`}>
-                <Upload size={48} className="mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900">سحب وإفلات ملف Excel هنا</h3>
-                <p className="text-sm text-gray-500 mt-2">أو اضغط لاختيار الملف من جهازك</p>
-                
-                <input 
-                    type="file" 
-                    id="file-upload" 
-                    className="hidden" 
-                    accept=".xlsx, .xls" 
-                    onChange={handleFileUpload} 
-                    disabled={!importTargetSchoolId}
-                />
-                <label 
-                    htmlFor="file-upload" 
-                    className={`mt-4 px-6 py-2.5 rounded-lg inline-block font-medium ${!importTargetSchoolId ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary-600 text-white hover:bg-primary-700 cursor-pointer'}`}
-                >
-                    {importTargetSchoolId ? 'اختر ملف Excel' : 'يرجى اختيار المدرسة أولاً'}
-                </label>
+                {isImporting ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                        <Loader2 size={48} className="animate-spin text-primary-600 mb-4" />
+                        <h3 className="text-lg font-bold text-gray-800">جاري معالجة البيانات...</h3>
+                        <p className="text-sm text-gray-500 mt-2">يرجى الانتظار، قد يستغرق هذا بضع لحظات.</p>
+                    </div>
+                ) : (
+                    <>
+                        <Upload size={48} className="mx-auto text-gray-400 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900">سحب وإفلات ملف Excel هنا</h3>
+                        <p className="text-sm text-gray-500 mt-2">أو اضغط لاختيار الملف من جهازك</p>
+                        
+                        <input 
+                            type="file" 
+                            id="file-upload" 
+                            className="hidden" 
+                            accept=".xlsx, .xls" 
+                            onChange={handleFileUpload} 
+                            disabled={!importTargetSchoolId}
+                        />
+                        <label 
+                            htmlFor="file-upload" 
+                            className={`mt-4 px-6 py-2.5 rounded-lg inline-block font-medium ${!importTargetSchoolId ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary-600 text-white hover:bg-primary-700 cursor-pointer'}`}
+                        >
+                            {importTargetSchoolId ? 'اختر ملف Excel' : 'يرجى اختيار المدرسة أولاً'}
+                        </label>
+                    </>
+                )}
              </div>
           </div>
       )}
