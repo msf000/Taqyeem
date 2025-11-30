@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { UserRole, User } from '../types';
-import { School, User as UserIcon, Mail, Lock, Building2, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
+import { UserRole, User, TeacherCategory } from '../types';
+import { School, User as UserIcon, Mail, Lock, Building2, ArrowRight, Loader2, CheckCircle, CreditCard } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 interface RegisterScreenProps {
@@ -23,8 +23,9 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
     schoolType: 'بنين',
     // Manager Data
     fullName: '',
+    nationalId: '', // Added National ID
     email: '',
-    password: '', // Note: In a real app, handle auth properly. Here we simulate or use app_users.
+    password: '', 
     confirmPassword: ''
   });
 
@@ -40,16 +41,12 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
     }
 
     try {
-        // 1. Check if email already exists
-        const { data: existingUser } = await supabase
-            .from('app_users')
-            .select('id')
-            .eq('email', formData.email)
-            .single();
+        // 1. Check if email or national ID already exists
+        const { data: existingEmail } = await supabase.from('app_users').select('id').eq('email', formData.email).maybeSingle();
+        if (existingEmail) throw new Error('البريد الإلكتروني مستخدم بالفعل');
 
-        if (existingUser) {
-            throw new Error('البريد الإلكتروني مستخدم بالفعل');
-        }
+        const { data: existingId } = await supabase.from('teachers').select('id').eq('national_id', formData.nationalId).maybeSingle();
+        if (existingId) throw new Error('رقم الهوية الوطنية مسجل بالفعل');
 
         // 2. Create School
         const { data: schoolData, error: schoolError } = await supabase
@@ -59,28 +56,47 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
                 ministry_id: formData.ministryId,
                 stage: formData.stage,
                 type: formData.schoolType,
-                manager_name: formData.fullName
+                manager_name: formData.fullName,
+                manager_national_id: formData.nationalId // Save manager ID in school record too
             }])
             .select()
             .single();
 
         if (schoolError) throw schoolError;
 
-        // 3. Create User (Principal)
+        // 3. Create Manager as a TEACHER (to be evaluatable and unified)
+        const { error: teacherError } = await supabase
+            .from('teachers')
+            .insert([{
+                name: formData.fullName,
+                national_id: formData.nationalId,
+                school_id: schoolData.id,
+                role: UserRole.PRINCIPAL,
+                roles: [UserRole.PRINCIPAL], // Grant Principal Role
+                category: TeacherCategory.MANAGER, // Set category as Manager
+                specialty: 'إدارة مدرسية',
+                password: formData.password,
+                mobile: '' 
+            }]);
+
+        if (teacherError) throw teacherError;
+
+        // 4. Create Manager in App Users (For Email Login & Consistency)
         const { data: userData, error: userError } = await supabase
             .from('app_users')
             .insert([{
                 full_name: formData.fullName,
                 email: formData.email,
                 role: UserRole.PRINCIPAL,
-                school_id: schoolData.id
+                school_id: schoolData.id,
+                password: formData.password
             }])
             .select()
             .single();
 
         if (userError) throw userError;
 
-        // 4. Create Free Trial Subscription (Optional)
+        // 5. Create Free Trial Subscription
         await supabase.from('subscriptions').insert([{
             school_id: schoolData.id,
             plan_name: 'Basic',
@@ -90,12 +106,13 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
             price: 0
         }]);
 
-        // 5. Login User
+        // 6. Login User
         const userObj: User = {
             id: userData.id,
             name: userData.full_name,
             role: UserRole.PRINCIPAL,
             email: userData.email,
+            nationalId: formData.nationalId,
             schoolId: schoolData.id,
             schoolName: schoolData.name
         };
@@ -234,12 +251,27 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
                          </div>
                      </div>
                      <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني</label>
+                         <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية (للدخول كمعلم/مدير)</label>
+                         <div className="relative">
+                             <CreditCard className="absolute top-3 right-3 text-gray-400" size={18} />
+                             <input 
+                                 type="text" required
+                                 className="w-full pr-10 pl-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 outline-none font-mono text-left"
+                                 dir="ltr"
+                                 placeholder="10xxxxxxxx"
+                                 value={formData.nationalId}
+                                 onChange={e => setFormData({...formData, nationalId: e.target.value})}
+                             />
+                         </div>
+                     </div>
+                     <div>
+                         <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني (للدخول كإدارة)</label>
                          <div className="relative">
                              <Mail className="absolute top-3 right-3 text-gray-400" size={18} />
                              <input 
                                  type="email" required
                                  className="w-full pr-10 pl-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                                 placeholder="manager@example.com"
                                  value={formData.email}
                                  onChange={e => setFormData({...formData, email: e.target.value})}
                              />
@@ -271,7 +303,7 @@ export default function RegisterScreen({ onLogin, onBack }: RegisterScreenProps)
 
                      <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 mt-4">
                          <p className="font-bold mb-1">معلومة:</p>
-                         سيتم إنشاء حساب مدير النظام وربطه بالمدرسة تلقائياً، وسيتم تفعيل باقة تجريبية لمدة شهر.
+                         سيتم إنشاء حساب مدير النظام (بصلاحية المعلم والمدير) وربطه بالمدرسة تلقائياً. يمكنك استخدام رقم الهوية أو البريد للدخول.
                      </div>
 
                      <div className="pt-4 flex justify-between">

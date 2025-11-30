@@ -65,6 +65,9 @@ export default function SystemSettings() {
 -- إضافة عمود المصفوفة للأدوار في جدول المعلمين إذا لم يكن موجوداً
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] DEFAULT '{}';
 
+-- إضافة عمود رقم هوية المدير لجدول المدارس
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS manager_national_id text;
+
 -- نقل البيانات القديمة (role وحيد) إلى المصفوفة الجديدة
 UPDATE teachers 
 SET roles = array_append(roles, role) 
@@ -130,6 +133,7 @@ create table if not exists schools (
   type text,
   ministry_id text,
   manager_name text,
+  manager_national_id text,
   evaluator_name text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -1036,10 +1040,10 @@ NOTIFY pgrst, 'reload schema';
                             
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                                 <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm">
-                                    <AlertTriangle size={16} /> تحديث هام لتعدد الصلاحيات
+                                    <AlertTriangle size={16} /> تحديث هام
                                 </h4>
                                 <p className="text-xs text-blue-800">
-                                    لتفعيل ميزة "سجل واحد بصلاحيات متعددة" و "الأحداث المستقلة لكل مدرسة"، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
+                                    لتفعيل كافة التحديثات الأخيرة وإضافة الأعمدة الناقصة، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
                                 </p>
                             </div>
 
