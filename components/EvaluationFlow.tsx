@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, UploadCloud, Star, Loader2, AlertCircle, Calendar, Link as LinkIcon, ExternalLink, FileText, Square, CheckSquare, Lightbulb, TrendingUp, ThumbsUp } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
@@ -13,13 +13,12 @@ interface EvaluationFlowProps {
 
 export default function EvaluationFlow({ teacherId, evaluationId, onBack }: EvaluationFlowProps) {
   const [step, setStep] = useState<'period' | 'scoring' | 'summary' | 'print'>('period');
-  const [currentIndicatorIndex, setCurrentIndicatorIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // UI States
-  const [showNotes, setShowNotes] = useState(false);
+  // Expanded Rows for Details (Accordion)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Data State
   const [currentEvalId, setCurrentEvalId] = useState<string | null>(evaluationId || null);
@@ -44,18 +43,28 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
   const [indicators, setIndicators] = useState<EvaluationIndicator[]>([]);
 
+  // --- Helpers ---
+  const toggleRow = (id: string) => {
+      setExpandedRows(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+      });
+  };
+
   const getErrorMessage = (error: any): string => {
     if (!error) return 'حدث خطأ غير معروف';
-    if (error?.code === '23505') return 'يوجد تقييم مسجل بالفعل لهذا المعلم في هذه الفترة.';
     try {
         const str = JSON.stringify(error);
         if (str === '{}' || str === '[]') return 'خطأ غير محدد في النظام';
         return str;
     } catch {
-        return 'خطأ غير معروف (تعذر عرض التفاصيل)';
+        return 'خطأ غير معروف';
     }
   };
 
+  // --- Fetch Data ---
   useEffect(() => {
     const fetchAllData = async () => {
       setIsLoading(true);
@@ -118,30 +127,24 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
         setIndicators(mappedIndicators);
 
+        // Fetch Events
         try {
-            const { data: eventsData, error: evError } = await supabase
+            const { data: eventsData } = await supabase
             .from('school_events')
             .select('*')
             .eq('type', 'evaluation')
             .in('status', ['active', 'upcoming'])
-            .order('status', { ascending: true })
-            .order('start_date', { ascending: true });
+            .order('status', { ascending: true });
             
-            if (!evError && eventsData) {
+            if (eventsData) {
                 setAvailableEvents(eventsData);
-                if (!currentEvalId && !evaluationId) {
-                    const activeEvent = eventsData.find((e: any) => e.status === 'active');
-                    if (activeEvent) {
-                        setPeriod(prev => ({ ...prev, name: activeEvent.name }));
-                    } else if (eventsData.length > 0) {
-                        setPeriod(prev => ({ ...prev, name: eventsData[0].name }));
-                    }
+                if (!currentEvalId && !evaluationId && eventsData.length > 0) {
+                    setPeriod(prev => ({ ...prev, name: eventsData[0].name }));
                 }
             }
-        } catch (e) {
-            console.log('Events table might not exist yet or empty');
-        }
+        } catch (e) { console.log('Events error', e); }
 
+        // Fetch Evidence
         try {
             const { data: evidenceData } = await supabase
                 .from('teacher_evidence')
@@ -157,22 +160,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                 }));
                 setTeacherEvidenceLinks(mappedEvidence);
             }
-        } catch (e) {
-            console.log("Error fetching evidence", e);
-        }
+        } catch (e) { console.log("Evidence error", e); }
 
-        let evalQuery = supabase.from('evaluations').select('*');
-        
-        if (currentEvalId) {
-            evalQuery = evalQuery.eq('id', currentEvalId);
-        } else {
-            if (evaluationId) {
-                 evalQuery = evalQuery.eq('id', evaluationId);
-            }
-        }
-
+        // Fetch Existing Evaluation
         if (currentEvalId || evaluationId) {
-            const { data: evalData } = await evalQuery.single();
+            const qId = currentEvalId || evaluationId;
+            const { data: evalData } = await supabase.from('evaluations').select('*').eq('id', qId).single();
 
             if (evalData) {
               setCurrentEvalId(evalData.id);
@@ -186,10 +179,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             }
         }
       } catch (error: any) {
-        if (error.code !== 'PGRST116') {
-            console.error('Error fetching data:', error);
-            setErrorMsg(getErrorMessage(error));
-        }
+        if (error.code !== 'PGRST116') setErrorMsg(getErrorMessage(error));
       } finally {
         setIsLoading(false);
       }
@@ -198,9 +188,10 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     fetchAllData();
   }, [teacherId, evaluationId]);
 
+  // --- Save Logic ---
   const saveToDb = useCallback(async (isManual = false): Promise<boolean> => {
       if (!teacherId || !period.name) {
-          if (isManual) alert("يرجى تحديد فترة التقييم قبل الحفظ");
+          if (isManual) alert("يرجى تحديد فترة التقييم");
           return false;
       }
 
@@ -227,68 +218,28 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
         const { data, error } = await query;
         if (error) throw error;
         
-        if (data && data[0]) {
-            setCurrentEvalId(data[0].id);
-        }
+        if (data && data[0]) setCurrentEvalId(data[0].id);
         setSaveStatus('saved');
         return true;
       } catch (error: any) {
-        console.error('Error saving:', error);
         setSaveStatus('error');
         if (isManual) alert('فشل الحفظ: ' + getErrorMessage(error));
         return false;
       }
   }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId]);
 
-  // Only autosave when in scoring step to avoid creating duplicate records during period selection
+  // Autosave
   useEffect(() => {
     if (isLoading || indicators.length === 0 || step !== 'scoring') return; 
-    const timeoutId = setTimeout(() => {
-        if (period.name) saveToDb(false);
-    }, 1500); 
+    const timeoutId = setTimeout(() => { if (period.name) saveToDb(false); }, 1500); 
     return () => clearTimeout(timeoutId);
-  }, [saveToDb, isLoading, indicators.length, step]);
+  }, [scores, generalNotes]);
 
+  // --- Handlers ---
   const handleStartEvaluation = async () => {
-      if (!period.name) {
-          alert('يرجى اختيار الفترة');
-          return;
-      }
-
-      // Check if evaluation already exists to avoid unique constraint error
-      if (!currentEvalId) {
-          setIsLoading(true);
-          try {
-              const { data: existingEval, error } = await supabase
-                  .from('evaluations')
-                  .select('*')
-                  .eq('teacher_id', teacherId)
-                  .eq('period_name', period.name)
-                  .maybeSingle();
-              
-              if (existingEval) {
-                  // Load existing data
-                  setCurrentEvalId(existingEval.id);
-                  setScores(existingEval.scores || {});
-                  setGeneralNotes(existingEval.general_notes || '');
-                  setPeriod(prev => ({ ...prev, date: existingEval.eval_date }));
-                  setStep('scoring'); // Just move to scoring, autosave will eventually sync if needed
-                  setIsLoading(false);
-                  return;
-              }
-          } catch (e) {
-              console.error("Check existing error", e);
-          } finally {
-              setIsLoading(false);
-          }
-      }
-
-      // If we are here, either it's a new record or we already have an ID.
-      // Call saveToDb to create record if new.
+      if (!period.name) return alert('يرجى اختيار الفترة');
       const success = await saveToDb(true);
-      if (success) {
-          setStep('scoring');
-      }
+      if (success) setStep('scoring');
   };
 
   const handleFinish = async () => {
@@ -298,25 +249,81 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       }
   };
 
-  const currentIndicator = indicators[currentIndicatorIndex];
-  
-  const currentScore: EvaluationScore = (currentIndicator && scores[currentIndicator.id]) || { 
-    indicatorId: currentIndicator?.id || '', 
-    level: 0,
-    score: 0, 
-    evidence: '', 
-    notes: '', 
-    improvement: '', 
-    strengths: '',
-    isComplete: false 
+  const handleScoreChange = (indicator: EvaluationIndicator, valueStr: string) => {
+    let value = parseFloat(valueStr);
+    if (isNaN(value)) value = 0;
+    if (value < 0) value = 0;
+    if (value > indicator.weight) value = indicator.weight;
+
+    // Determine level roughly for UI feedback (1-5)
+    const ratio = value / indicator.weight;
+    let level = 0;
+    if (value > 0) {
+        if (ratio >= 0.9) level = 5;
+        else if (ratio >= 0.8) level = 4;
+        else if (ratio >= 0.7) level = 3;
+        else if (ratio >= 0.5) level = 2;
+        else level = 1;
+    }
+
+    // Auto Text Generation
+    let autoImprovement = scores[indicator.id]?.improvement || '';
+    let autoStrengths = scores[indicator.id]?.strengths || '';
+    
+    if (value > 0) {
+        const indicatorName = indicator.text;
+        switch (level) {
+            case 5:
+                if (!autoStrengths) autoStrengths = `أداء متميز في "${indicatorName}"، تطبيق احترافي للمعايير.`;
+                break;
+            case 1:
+            case 2:
+                if (!autoImprovement) autoImprovement = `يحتاج إلى دعم وتوجيه في "${indicatorName}" والتركيز على الأساسيات.`;
+                break;
+        }
+    }
+
+    setScores(prev => ({
+        ...prev,
+        [indicator.id]: {
+            evidence: '',
+            notes: '',
+            ...prev[indicator.id],
+            indicatorId: indicator.id,
+            score: value,
+            level: level,
+            isComplete: value > 0,
+            strengths: autoStrengths,
+            improvement: autoImprovement
+        }
+    }));
   };
 
-  useEffect(() => {
-      if (currentIndicator) {
-          const hasNotes = !!scores[currentIndicator.id]?.notes;
-          setShowNotes(hasNotes);
-      }
-  }, [currentIndicatorIndex, step]);
+  const updateField = (indicatorId: string, field: keyof EvaluationScore, value: any) => {
+    setScores(prev => {
+      const current = prev[indicatorId] || { 
+        indicatorId, 
+        score: 0, 
+        level: 0, 
+        evidence: '', 
+        notes: '', 
+        improvement: '',
+        isComplete: false
+      };
+      
+      return {
+        ...prev,
+        [indicatorId]: {
+          ...current,
+          [field]: value
+        }
+      };
+    });
+  };
+
+  const calculateTotal = (): number => {
+    return (Object.values(scores) as EvaluationScore[]).reduce((acc, curr) => acc + (curr.score || 0), 0);
+  };
 
   const getMasteryLevel = (score: number, max: number) => {
     if (score === 0) return "--";
@@ -328,98 +335,27 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     return "غير مرضي (1)";
   };
 
-  // --- Logic for 1-5 Scale Scoring ---
-  const updateScoreByLevel = (level: number) => {
-    if (!currentIndicator) return;
-    
-    // Formula: (Level / 5) * Weight
-    const weight = currentIndicator.weight;
-    const weightedScore = (level / 5) * weight;
-    
-    const indicatorName = currentIndicator.text;
-    const criteria = currentIndicator.evaluationCriteria;
-
-    // Auto-Generate Text based on Level
-    let autoImprovement = "";
-    let autoStrengths = "";
-
-    if (level === 5) {
-        autoStrengths = `أداء نموذجي في "${indicatorName}"، حيث تم تطبيق المعايير باحترافية عالية، خاصة في: ${criteria[0] || 'كافة الجوانب'}.`;
-        autoImprovement = `يوصى بتوثيق هذه الممارسة المتميزة ونقل الخبرة للزملاء لتعميم الفائدة.`;
-    } else if (level === 4) {
-        autoStrengths = `أداء متميز وتخطى التوقعات في معظم معايير "${indicatorName}".`;
-        autoImprovement = `للوصول للمثالية، يمكن التركيز على الابتكار في ${criteria[0] || 'التطبيق'} بشكل إبداعي أكثر.`;
-    } else if (level === 3) {
-        autoStrengths = `تم تحقيق متطلبات "${indicatorName}" الأساسية بشكل جيد.`;
-        autoImprovement = `يمكن تحسين الأداء من خلال التركيز على جودة المخرجات في: ${criteria[1] || criteria[0] || 'التفاصيل الدقيقة'}.`;
-    } else if (level === 2) {
-        autoStrengths = `توجد محاولات لتطبيق "${indicatorName}" ولكنها تحتاج إلى توجيه.`;
-        autoImprovement = `الأداء بحاجة إلى تطوير عاجل. يرجى مراجعة ${criteria[0] || 'الأساسيات'} والعمل مع المشرف لتجاوز التحديات.`;
-    } else if (level === 1) {
-        autoStrengths = `لم تظهر نقاط قوة واضحة في هذا المؤشر.`;
-        autoImprovement = `الأداء غير مرضي. يتطلب بناء خطة علاجية فورية للتمكن من أساسيات ${indicatorName}.`;
-    }
-
-    const newScore: EvaluationScore = {
-       ...currentScore,
-       level: level,
-       score: weightedScore,
-       isComplete: true,
-       improvement: currentScore.improvement || autoImprovement,
-       strengths: currentScore.strengths || autoStrengths
-    };
-    
-    setScores({
-      ...scores,
-      [currentIndicator.id]: newScore
-    });
-  };
-
-  const updateField = (field: keyof EvaluationScore, value: any) => {
-    if (!currentIndicator) return;
-    setScores({
-      ...scores,
-      [currentIndicator.id]: {
-        ...currentScore,
-        [field]: value
+  // Scroll to Indicator
+  const scrollToIndicator = (id: string) => {
+      const element = document.getElementById(`row-${id}`);
+      if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight it briefly
+          element.classList.add('bg-yellow-50');
+          setTimeout(() => element.classList.remove('bg-yellow-50'), 2000);
       }
-    });
   };
 
-  const calculateTotal = (): number => {
-    return (Object.values(scores) as EvaluationScore[]).reduce((acc: number, curr: EvaluationScore) => acc + (curr.score || 0), 0);
-  };
-
-  const getCurrentIndicatorEvidence = () => {
-      if (!currentIndicator) return [];
-      return teacherEvidenceLinks.filter(e => e.indicatorId === currentIndicator.id);
-  };
+  const completedCount = (Object.values(scores) as EvaluationScore[]).filter(s => s.score > 0).length;
+  const progressPercent = indicators.length > 0 ? (completedCount / indicators.length) * 100 : 0;
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>;
-  if (errorMsg) return <div className="text-red-500 text-center p-12">{errorMsg}</div>;
-  if (!currentIndicator) return <div className="p-12 text-center">لا توجد مؤشرات لهذه الفئة من المعلمين</div>;
+  if (step === 'print') return <PrintView teacherName={teacherDetails.name} teacherNationalId={teacherDetails.nationalId} teacherSpecialty={teacherDetails.specialty} teacherCategory={teacherDetails.category} schoolName={teacherDetails.schoolName} ministryId={teacherDetails.ministryId} periodDate={period.date} totalScore={calculateTotal()} scores={scores} indicators={indicators} onBack={() => setStep('summary')} />;
 
-  if (step === 'print') {
-     return <PrintView 
-        teacherName={teacherDetails.name}
-        teacherNationalId={teacherDetails.nationalId}
-        teacherSpecialty={teacherDetails.specialty}
-        teacherCategory={teacherDetails.category}
-        schoolName={teacherDetails.schoolName}
-        ministryId={teacherDetails.ministryId}
-        periodDate={period.date}
-        totalScore={calculateTotal()}
-        scores={scores}
-        indicators={indicators}
-        onBack={() => setStep('summary')}
-     />
-  }
-
-  // --- RENDER SCORING TABLE ---
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-20">
       {/* Header Info */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex justify-between items-start">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
            <div className="flex items-center gap-2 mb-2">
              <button onClick={onBack} className="text-gray-400 hover:text-gray-700"><ArrowRight size={20} /></button>
@@ -427,62 +363,36 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
            </div>
            <div className="flex gap-4 text-sm text-gray-500 mr-7">
               {period.name && <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">الفترة: {period.name}</span>}
-              <span>المدرسة: {teacherDetails.schoolName || 'غير محدد'}</span>
+              <span>المدرسة: {teacherDetails.schoolName}</span>
            </div>
         </div>
         <div className="flex flex-col items-end">
-            <span className="text-sm text-gray-500 mb-1">حالة التقييم</span>
-            <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                {Object.keys(scores).length === indicators.length ? 'مكتمل' : 'جاري التقييم'}
-            </span>
+            <span className="text-sm text-gray-500 mb-1">النتيجة الحالية</span>
+            <div className="flex items-center gap-3">
+                <span className="text-3xl font-bold text-primary-600">{calculateTotal().toFixed(1)}</span>
+                <span className="text-sm bg-gray-100 px-2 py-1 rounded">{getMasteryLevel(calculateTotal(), 100)}</span>
+            </div>
             <div className="flex items-center gap-1 mt-2 text-xs">
                  {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ...</span>}
                  {saveStatus === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> تم الحفظ</span>}
-                 {saveStatus === 'error' && <span className="text-red-500 flex items-center gap-1"><AlertCircle size={10} /> خطأ في الحفظ</span>}
             </div>
         </div>
       </div>
 
       {step === 'period' && (
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
+        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in max-w-2xl mx-auto mt-12">
            <h3 className="text-lg font-bold mb-6 border-b pb-4 flex items-center gap-2">
-             <Calendar className="text-primary-600" /> أولاً: تحديد فترة التقييم
+             <Calendar className="text-primary-600" /> اختيار فترة التقييم
            </h3>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <div>
-                 <label className="block text-sm font-medium mb-2">اسم فترة التقييم</label>
-                 <select 
-                    className="w-full border p-2.5 rounded-lg bg-white"
-                    value={period.name}
-                    onChange={(e) => {
-                        const newName = e.target.value;
-                        setPeriod({...period, name: newName });
-                    }}
-                 >
-                    <option value="">اختر الفترة</option>
-                    {availableEvents.length > 0 ? (
-                        availableEvents.map(evt => (
-                            <option key={evt.id} value={evt.name}>
-                                {evt.name} ({evt.status === 'active' ? 'نشط الآن' : new Date(evt.start_date).toLocaleDateString('ar-SA')})
-                            </option>
-                        ))
-                    ) : (
-                        <>
-                            <option value="الربع الأول">الربع الأول</option>
-                            <option value="الربع الثاني">الربع الثاني</option>
-                            <option value="الربع الثالث">الربع الثالث</option>
-                            <option value="نهاية العام">نهاية العام</option>
-                        </>
-                    )}
-                 </select>
-              </div>
+           <div className="mb-8">
+              <label className="block text-sm font-medium mb-2">الفترة</label>
+              <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-primary-500" value={period.name} onChange={(e) => setPeriod({...period, name: e.target.value})}>
+                <option value="">اختر الفترة</option>
+                {availableEvents.length > 0 ? availableEvents.map(evt => <option key={evt.id} value={evt.name}>{evt.name}</option>) : <option value="عام">تقييم عام</option>}
+              </select>
            </div>
            <div className="flex justify-end">
-              <button 
-                disabled={!period.name}
-                onClick={handleStartEvaluation}
-                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
-              >
+              <button disabled={!period.name} onClick={handleStartEvaluation} className="bg-primary-600 text-white px-8 py-3 rounded-xl hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 font-bold transition-all">
                 {currentEvalId ? 'متابعة التقييم' : 'بدء التقييم'} <ChevronLeft size={18} />
               </button>
            </div>
@@ -490,245 +400,240 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       )}
 
       {step === 'scoring' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-            {/* Sidebar List */}
-            <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-fit">
-                <div className="p-4 bg-gray-50 font-bold border-b text-gray-700 flex justify-between items-center">
-                  <span>مؤشرات التقييم</span>
-                  <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{Math.round((Object.keys(scores).length / indicators.length) * 100)}%</span>
+        <div className="space-y-6 animate-fade-in">
+            
+            {/* 1. Progress Bar & Completion Indicator */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-bold text-gray-700">مؤشر اكتمال التقييم</span>
+                    <span className="text-sm text-primary-600 font-bold">{Math.round(progressPercent)}%</span>
                 </div>
-                <div className="divide-y divide-gray-100 max-h-[700px] overflow-y-auto">
-                    {indicators.map((ind, idx) => (
-                        <button 
-                            key={ind.id}
-                            onClick={() => setCurrentIndicatorIndex(idx)}
-                            className={`w-full text-right p-4 text-sm flex items-center justify-between transition-colors ${
-                                idx === currentIndicatorIndex 
-                                ? 'bg-primary-50 text-primary-700 font-medium border-r-4 border-primary-500' 
-                                : 'hover:bg-gray-50 text-gray-600'
-                            }`}
-                        >
-                            <span className="truncate ml-2">{idx + 1}- {ind.text}</span>
-                            {scores[ind.id]?.isComplete ? <CheckCircle2 size={16} className="text-green-500" /> : <span className="w-4 h-4 rounded-full border border-gray-300"></span>}
-                        </button>
-                    ))}
+                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                    <div 
+                        className="bg-green-500 h-3 rounded-full transition-all duration-500 ease-out" 
+                        style={{ width: `${progressPercent}%` }}
+                    ></div>
                 </div>
             </div>
 
-            {/* Scoring Area */}
-            <div className="lg:col-span-9 space-y-6">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 p-6 border-b border-gray-200 flex justify-between items-start">
-                     <div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">{currentIndicator.text}</h3>
-                        <p className="text-sm text-gray-500">{currentIndicator.description}</p>
-                     </div>
-                     <div className="text-center bg-white p-3 rounded-lg border shadow-sm">
-                        <span className="block text-xs text-gray-500 mb-1">الوزن النسبي</span>
-                        <strong className="text-xl text-primary-700">{currentIndicator.weight}</strong>
-                     </div>
-                  </div>
+            {/* 2. Quick Navigation Dropdown */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
+                <Target className="text-primary-600" size={24} />
+                <div className="flex-1">
+                    <label className="block text-xs font-bold text-gray-500 mb-1">الانتقال السريع للمعيار:</label>
+                    <select 
+                        className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                        onChange={(e) => scrollToIndicator(e.target.value)}
+                        value=""
+                    >
+                        <option value="" disabled>-- اختر المؤشر من القائمة --</option>
+                        {indicators.map((ind, idx) => (
+                            <option key={ind.id} value={ind.id}>
+                                {idx + 1}. {ind.text} ({scores[ind.id]?.score > 0 ? 'مكتمل' : 'غير مكتمل'})
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
 
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse">
-                         <thead className="bg-white text-primary-600 text-sm border-b">
+            {/* 3. The Main Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                        <thead className="bg-gray-100 text-gray-700 text-sm font-bold border-b border-gray-200">
                             <tr>
-                               <th className="px-6 py-4 font-bold text-right w-[40%]">مؤشر التقييم (المعايير)</th>
-                               <th className="px-4 py-4 font-bold text-center w-[25%]">مستوى التقييم (1-5)</th>
-                               <th className="px-4 py-4 font-bold text-center w-[15%]">الدرجة الموزونة</th>
-                               <th className="px-6 py-4 font-bold text-center w-[20%]">الشواهد</th>
+                                {/* Specific Columns Requested */}
+                                <th className="px-4 py-4 w-[30%] border-l border-gray-200">مؤشر التقييم</th>
+                                <th className="px-2 py-4 w-[8%] text-center border-l border-gray-200">الحد الأقصى</th>
+                                <th className="px-2 py-4 w-[10%] text-center border-l border-gray-200">الدرجة</th>
+                                <th className="px-2 py-4 w-[12%] text-center border-l border-gray-200">الحالة</th>
+                                <th className="px-4 py-4 w-[20%] border-l border-gray-200">مؤشر التحقق</th>
+                                <th className="px-4 py-4 w-[15%] text-center">الشواهد</th>
                             </tr>
-                         </thead>
-                         <tbody className="divide-y divide-gray-100">
-                            {currentIndicator.evaluationCriteria.length === 0 ? (
-                                <tr><td colSpan={4} className="p-4 text-center">لا توجد معايير</td></tr>
-                            ) : (
-                                currentIndicator.evaluationCriteria.map((criteriaText, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50">
-                                        <td className="px-6 py-3 text-sm text-gray-700 leading-relaxed border-r border-gray-100">
-                                            • {criteriaText}
-                                        </td>
-                                        {idx === 0 && (
-                                            <>
-                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center border-r border-gray-100 align-top bg-white">
-                                                    <div className="flex flex-row-reverse justify-center gap-1">
-                                                        {[1, 2, 3, 4, 5].map((level) => (
-                                                            <button
-                                                                key={level}
-                                                                onClick={() => updateScoreByLevel(level)}
-                                                                className={`w-9 h-9 rounded-full font-bold text-sm transition-all shadow-sm border ${
-                                                                    currentScore.level === level
-                                                                    ? 'bg-primary-600 text-white border-primary-600 scale-110 ring-2 ring-primary-200'
-                                                                    : 'bg-white text-gray-500 border-gray-200 hover:border-primary-300 hover:text-primary-600'
-                                                                }`}
-                                                                title={`مستوى ${level}`}
-                                                            >
-                                                                {level}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                    <div className="mt-2 text-xs text-gray-500 font-medium">
-                                                        {currentScore.level > 0 ? getMasteryLevel(currentScore.score, currentIndicator.weight) : 'حدد المستوى'}
-                                                    </div>
-                                                </td>
-                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 text-center align-middle border-r border-gray-100 bg-gray-50/50">
-                                                    <div className="text-2xl font-bold text-gray-800">
-                                                        {currentScore.score.toFixed(1)}
-                                                    </div>
-                                                    <span className="text-[10px] text-gray-400">من {currentIndicator.weight}</span>
-                                                </td>
-                                                <td rowSpan={currentIndicator.evaluationCriteria.length} className="px-4 py-4 align-top text-center bg-gray-50/50">
-                                                    {getCurrentIndicatorEvidence().length > 0 ? (
-                                                        <div className="space-y-2">
-                                                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded-full mb-2 inline-block">
-                                                                يوجد {getCurrentIndicatorEvidence().length} شاهد
-                                                            </span>
-                                                            {getCurrentIndicatorEvidence().map((ev, i) => (
-                                                                <a 
-                                                                    key={i} 
-                                                                    href={ev.url} 
-                                                                    target="_blank" 
-                                                                    rel="noopener noreferrer" 
-                                                                    className="block w-full text-left text-xs bg-white border border-blue-200 p-2 rounded hover:bg-blue-50 text-blue-700 truncate transition-colors"
-                                                                    title={ev.description}
-                                                                >
-                                                                    <div className="flex items-center gap-1 mb-1">
-                                                                        <ExternalLink size={10} />
-                                                                        <span className="font-bold">شاهد {i + 1}</span>
-                                                                    </div>
-                                                                    <span className="text-gray-500">{ev.description}</span>
-                                                                </a>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-sm">
+                            {indicators.map((ind) => {
+                                const scoreData = scores[ind.id] || { score: 0, level: 0, notes: '', improvement: '', strengths: '' };
+                                const evidenceList = teacherEvidenceLinks.filter(e => e.indicatorId === ind.id);
+                                const isExpanded = expandedRows.has(ind.id);
+
+                                return (
+                                    <React.Fragment key={ind.id}>
+                                        <tr id={`row-${ind.id}`} className={`hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-blue-50/20' : ''}`}>
+                                            {/* Column 1: Indicator Name + Expand Button */}
+                                            <td className="px-4 py-4 align-top border-l border-gray-100">
+                                                <div className="font-bold text-gray-800 mb-2 text-base">{ind.text}</div>
+                                                
+                                                {/* Detailed Criteria List */}
+                                                {ind.evaluationCriteria && ind.evaluationCriteria.length > 0 && (
+                                                    <div className="mb-3">
+                                                        <span className="text-[10px] text-gray-400 font-bold block mb-1">المعايير التفصيلية:</span>
+                                                        <ul className="list-disc list-inside text-xs text-gray-500 space-y-1">
+                                                            {ind.evaluationCriteria.map((crit, idx) => (
+                                                                <li key={idx} className="leading-relaxed">{crit}</li>
                                                             ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                <button 
+                                                    onClick={() => toggleRow(ind.id)}
+                                                    className="text-primary-600 text-xs font-bold hover:underline flex items-center gap-1"
+                                                >
+                                                    {isExpanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                                                    {isExpanded ? 'إخفاء التفاصيل' : 'تفاصيل التقدير والملاحظات'}
+                                                </button>
+                                            </td>
+
+                                            {/* Column 2: Max Score */}
+                                            <td className="px-2 py-4 text-center align-top font-bold text-gray-500 border-l border-gray-100 text-lg pt-5">
+                                                {ind.weight}
+                                            </td>
+
+                                            {/* Column 3: Score Input */}
+                                            <td className="px-2 py-4 text-center align-top border-l border-gray-100 pt-3">
+                                                <input 
+                                                    type="number" min="0" max={ind.weight} step="0.5"
+                                                    className={`w-16 h-12 text-center border-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none font-bold text-xl transition-all ${
+                                                        scoreData.score > 0 ? 'border-green-400 bg-green-50 text-green-800' : 'border-gray-300'
+                                                    }`}
+                                                    value={scoreData.score || ''}
+                                                    onChange={(e) => handleScoreChange(ind, e.target.value)}
+                                                    placeholder="-"
+                                                />
+                                            </td>
+
+                                            {/* Column 4: Status */}
+                                            <td className="px-2 py-4 text-center align-top border-l border-gray-100 pt-5">
+                                                {scoreData.score > 0 ? (
+                                                    <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold border border-green-200 shadow-sm">
+                                                        <CheckCircle2 size={14}/> مكتمل
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 bg-red-50 text-red-500 px-3 py-1.5 rounded-full text-xs font-bold border border-red-100 shadow-sm">
+                                                        <XCircle size={14}/> غير مكتمل
+                                                    </span>
+                                                )}
+                                            </td>
+
+                                            {/* Column 5: Verification Indicators */}
+                                            <td className="px-4 py-4 align-top text-gray-600 border-l border-gray-100">
+                                                <ul className="list-disc list-inside space-y-1 text-xs marker:text-gray-300">
+                                                    {ind.verificationIndicators.length > 0 
+                                                        ? ind.verificationIndicators.map((v, i) => <li key={i}>{v}</li>)
+                                                        : <li className="list-none text-gray-400">--</li>
+                                                    }
+                                                </ul>
+                                            </td>
+
+                                            {/* Column 6: Evidence */}
+                                            <td className="px-4 py-4 text-center align-top">
+                                                <div className="flex flex-col gap-2">
+                                                    {evidenceList.length > 0 ? evidenceList.map((ev, i) => (
+                                                        <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="text-xs bg-white border border-blue-200 text-blue-600 px-2 py-1.5 rounded hover:bg-blue-50 truncate flex items-center justify-center gap-1 shadow-sm">
+                                                            <ExternalLink size={12}/> شاهد {i+1}
+                                                        </a>
+                                                    )) : <span className="text-xs text-gray-400 italic">لا توجد شواهد</span>}
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        {/* Expanded Details Row (Accordion) */}
+                                        {isExpanded && (
+                                            <tr className="bg-gray-50 border-b border-gray-200 animate-fade-in shadow-inner">
+                                                <td colSpan={6} className="p-6">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                                                        {/* Rubric Average Display */}
+                                                        <div className="absolute top-0 left-0 bg-white border border-gray-200 px-3 py-1 rounded-lg shadow-sm text-xs font-bold text-gray-600">
+                                                            سلم التقدير (متوسط المؤشر): <span className="text-primary-600 text-sm">{scoreData.level} / 5</span>
                                                         </div>
-                                                    ) : (
-                                                        <div className="text-xs text-gray-400 py-4 flex flex-col items-center gap-1">
-                                                            <FileText size={20} className="opacity-50"/>
-                                                            <span>لا يوجد شواهد</span>
+
+                                                        {/* Strengths */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-green-700 mb-2 flex items-center gap-2">
+                                                                <ThumbsUp size={14}/> نقاط القوة (تلقائي/يدوي)
+                                                            </label>
+                                                            <textarea 
+                                                                className="w-full border border-green-200 p-3 rounded-lg text-sm h-20 focus:ring-2 focus:ring-green-500 outline-none bg-white shadow-sm resize-none"
+                                                                value={scoreData.strengths || ''}
+                                                                onChange={(e) => updateField(ind.id, 'strengths', e.target.value)}
+                                                                placeholder="اكتب نقاط القوة هنا..."
+                                                            />
                                                         </div>
-                                                    )}
+
+                                                        {/* Improvements */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center gap-2">
+                                                                <TrendingUp size={14}/> فرص التحسين (الخطة العلاجية)
+                                                            </label>
+                                                            <textarea 
+                                                                className="w-full border border-yellow-200 p-3 rounded-lg text-sm h-20 focus:ring-2 focus:ring-yellow-500 outline-none bg-white shadow-sm resize-none"
+                                                                value={scoreData.improvement || ''}
+                                                                onChange={(e) => updateField(ind.id, 'improvement', e.target.value)}
+                                                                placeholder="اكتب فرص التحسين هنا..."
+                                                            />
+                                                        </div>
+                                                        
+                                                        {/* General Notes */}
+                                                        <div className="md:col-span-2">
+                                                            <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><MessageSquare size={12}/> ملاحظات عامة للمقيم</label>
+                                                            <input 
+                                                                type="text" 
+                                                                className="w-full border p-2 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 outline-none bg-white"
+                                                                value={scoreData.notes || ''}
+                                                                onChange={(e) => updateField(ind.id, 'notes', e.target.value)}
+                                                                placeholder="ملاحظات إضافية..."
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </td>
-                                            </>
+                                            </tr>
                                         )}
-                                    </tr>
-                                ))
-                            )}
-                         </tbody>
-                      </table>
-                  </div>
+                                    </React.Fragment>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
-                  {/* Strengths & Improvement */}
-                  <div className="bg-gray-50 p-6 border-t border-gray-200">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                           <div>
-                              <label className="block text-xs font-bold text-green-700 mb-2 flex items-center gap-1"><ThumbsUp size={12}/> نقاط القوة (بناءً على الدرجة)</label>
-                              <textarea
-                                 className="w-full border border-green-200 rounded-lg p-3 bg-white text-sm text-gray-700 min-h-[100px] shadow-sm focus:ring-2 focus:ring-green-500 outline-none"
-                                 value={currentScore.strengths || ''}
-                                 onChange={(e) => updateField('strengths', e.target.value)}
-                                 placeholder="حدد مستوى التقييم لإنشاء نقاط القوة تلقائياً..."
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center gap-1"><TrendingUp size={12}/> فرص التحسين (الخطة العلاجية)</label>
-                              <textarea
-                                 className="w-full border border-yellow-200 rounded-lg p-3 bg-white text-sm text-gray-700 min-h-[100px] shadow-sm focus:ring-2 focus:ring-yellow-500 outline-none"
-                                 value={currentScore.improvement || ''}
-                                 onChange={(e) => updateField('improvement', e.target.value)}
-                                 placeholder="حدد مستوى التقييم لإنشاء فرص التحسين تلقائياً..."
-                              />
-                          </div>
-                      </div>
-                      
-                      <div className="mt-6 border-t border-gray-200 pt-4">
-                          <label className="flex items-center gap-3 cursor-pointer w-fit select-none">
-                              <div 
-                                  className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${showNotes ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-gray-300'}`}
-                                  onClick={() => setShowNotes(!showNotes)}
-                              >
-                                  {showNotes && <CheckCircle2 size={16} />}
-                              </div>
-                              <span className="text-sm font-bold text-gray-700" onClick={() => setShowNotes(!showNotes)}>إرفاق ملاحظات إضافية للمقيم (اختياري)</span>
-                          </label>
-
-                          {showNotes && (
-                              <div className="animate-fade-in mt-4">
-                                  <textarea 
-                                      rows={2} 
-                                      className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white shadow-sm"
-                                      placeholder="أضف ملاحظاتك الإضافية هنا..."
-                                      value={currentScore.notes}
-                                      onChange={(e) => updateField('notes', e.target.value)}
-                                  />
-                              </div>
-                          )}
-                      </div>
-                  </div>
-
-                  {/* Navigation */}
-                  <div className="p-6 bg-white border-t border-gray-200 flex justify-between items-center">
-                      <button 
-                          onClick={() => setCurrentIndicatorIndex(Math.max(0, currentIndicatorIndex - 1))}
-                          disabled={currentIndicatorIndex === 0}
-                          className="px-6 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg disabled:opacity-50"
-                      >
-                          السابق
-                      </button>
-                      
-                      {currentIndicatorIndex < indicators.length - 1 ? (
-                           <button 
-                              onClick={() => setCurrentIndicatorIndex(currentIndicatorIndex + 1)}
-                              className="flex items-center gap-2 bg-primary-600 text-white px-8 py-2 rounded-lg hover:bg-primary-700 shadow-sm"
-                           >
-                              التالي <ChevronLeft size={18} />
-                          </button>
-                      ) : (
-                           <button 
-                              onClick={() => setStep('summary')}
-                              className="flex items-center gap-2 bg-green-600 text-white px-8 py-2 rounded-lg hover:bg-green-700 shadow-sm"
-                           >
-                              إنهاء التقييم <Save size={18} />
-                          </button>
-                      )}
-                  </div>
-              </div>
+            {/* Actions */}
+            <div className="flex justify-end pt-4 border-t border-gray-200">
+                <button 
+                    onClick={() => setStep('summary')}
+                    className="flex items-center gap-2 bg-primary-600 text-white px-8 py-3 rounded-xl hover:bg-primary-700 shadow-lg font-bold transition-all"
+                >
+                    اعتماد التقييم وعرض الملخص <Save size={18} />
+                </button>
             </div>
         </div>
       )}
 
       {step === 'summary' && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
+          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in max-w-3xl mx-auto mt-8">
              <div className="text-center mb-8">
                 <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
                     <CheckCircle2 size={40} />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800">ملخص التقييم</h2>
+                <h2 className="text-2xl font-bold text-gray-800">ملخص التقييم النهائي</h2>
                 <p className="text-gray-500">تم رصد الدرجات بنجاح</p>
              </div>
 
              <div className="bg-gray-50 p-6 rounded-xl mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
                 <div className="text-center md:text-right">
-                    <div className="text-sm text-gray-500 mb-1">النتيجة النهائية الموزونة</div>
+                    <div className="text-sm text-gray-500 mb-1">النتيجة النهائية</div>
                     <div className="text-4xl font-bold text-primary-700">{calculateTotal().toFixed(1)}%</div>
                 </div>
                 <div className="text-center md:text-right">
-                    <div className="text-sm text-gray-500 mb-1">التقدير العام</div>
+                    <div className="text-sm text-gray-500 mb-1">التقدير اللفظي</div>
                     <div className="text-2xl font-bold text-gray-800">{getMasteryLevel(calculateTotal(), 100)}</div>
-                </div>
-                <div className="w-full md:w-auto flex-1">
-                    <label className="block text-sm font-medium mb-2">ملاحظات عامة</label>
-                    <textarea 
-                        className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none"
-                        rows={3}
-                        value={generalNotes}
-                        onChange={(e) => setGeneralNotes(e.target.value)}
-                    ></textarea>
                 </div>
              </div>
 
              <div className="flex justify-center gap-4">
-                <button onClick={() => setStep('scoring')} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">مراجعة</button>
-                <button onClick={() => setStep('print')} className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center gap-2"><Printer size={18} /> طباعة</button>
-                <button onClick={handleFinish} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">حفظ وخروج</button>
+                <button onClick={() => setStep('scoring')} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">عودة للتعديل</button>
+                <button onClick={() => setStep('print')} className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center gap-2"><Printer size={18} /> طباعة التقرير</button>
+                <button onClick={handleFinish} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold">حفظ وإغلاق</button>
              </div>
           </div>
       )}
