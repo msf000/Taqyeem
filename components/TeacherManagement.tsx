@@ -536,11 +536,17 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     <div className="space-y-6">
       <div className="flex border-b border-gray-200 gap-6">
         <button onClick={() => { setSubTab('list'); setEditingId(null); }} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
-        <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); setSelectedRoles([UserRole.TEACHER]); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
-            {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
-        </button>
-        <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
-        <button onClick={() => setSubTab('specialties')} className={`pb-3 font-medium transition-colors ${subTab === 'specialties' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>إدارة التخصصات</button>
+        
+        {/* Hide admin actions from Evaluator */}
+        {userRole !== UserRole.EVALUATOR && (
+            <>
+                <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); setSelectedRoles([UserRole.TEACHER]); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+                    {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
+                </button>
+                <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
+                <button onClick={() => setSubTab('specialties')} className={`pb-3 font-medium transition-colors ${subTab === 'specialties' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>إدارة التخصصات</button>
+            </>
+        )}
       </div>
 
       {subTab === 'list' && (
@@ -737,18 +743,24 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                                         >
                                                             عرض التفاصيل
                                                         </button>
-                                                        <button 
-                                                            onClick={() => { handleEditTeacher(teacher); setOpenMenuId(null); }} 
-                                                            className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                        >
-                                                            تحرير البيانات
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => { handleDeleteTeacher(teacher.id); setOpenMenuId(null); }} 
-                                                            className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                                        >
-                                                            حذف
-                                                        </button>
+                                                        
+                                                        {/* Restrict Edit/Delete for Evaluator */}
+                                                        {userRole !== UserRole.EVALUATOR && (
+                                                            <>
+                                                                <button 
+                                                                    onClick={() => { handleEditTeacher(teacher); setOpenMenuId(null); }} 
+                                                                    className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                                >
+                                                                    تحرير البيانات
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => { handleDeleteTeacher(teacher.id); setOpenMenuId(null); }} 
+                                                                    className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                                                >
+                                                                    حذف
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
