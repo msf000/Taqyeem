@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
@@ -26,6 +26,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   // UI States for Edit/View
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
+  
+  // Menu State
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Filtering & Sorting State
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,6 +47,17 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   const [isImporting, setIsImporting] = useState(false); // New loading state for import
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [importTargetSchoolId, setImportTargetSchoolId] = useState<string>('');
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (openMenuId && !(event.target as Element).closest('.action-menu-container')) {
+            setOpenMenuId(null);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openMenuId]);
 
   // Improved Helper for error messages
   const getErrorMessage = (error: any): string => {
@@ -180,6 +194,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
       });
       setSelectedRoles(teacher.roles || [UserRole.TEACHER]);
       setEditingId(teacher.id);
+      setOpenMenuId(null);
       setSubTab('add');
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -211,6 +226,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           
           setTeachers(teachers.filter(t => t.id !== id));
           if (viewTeacher?.id === id) setViewTeacher(null);
+          setOpenMenuId(null);
           
           alert('تم حذف المعلم وجميع تقييماته بنجاح.');
           return true;
@@ -703,13 +719,38 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                                 </button>
                                             )}
                                             
-                                            <div className="relative group">
-                                                <button className="p-1 text-gray-400 hover:text-gray-600"><MoreHorizontal size={20} /></button>
-                                                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden">
-                                                    <button onClick={() => setViewTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">عرض التفاصيل</button>
-                                                    <button onClick={() => handleEditTeacher(teacher)} className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">تحرير البيانات</button>
-                                                    <button onClick={() => handleDeleteTeacher(teacher.id)} className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50">حذف</button>
-                                                </div>
+                                            <div className="relative action-menu-container">
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(openMenuId === teacher.id ? null : teacher.id);
+                                                    }}
+                                                    className={`p-1 rounded-md transition-colors ${openMenuId === teacher.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                                                >
+                                                    <MoreHorizontal size={20} />
+                                                </button>
+                                                {openMenuId === teacher.id && (
+                                                    <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-100 z-50 overflow-hidden animate-fade-in">
+                                                        <button 
+                                                            onClick={() => { setViewTeacher(teacher); setOpenMenuId(null); }} 
+                                                            className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                        >
+                                                            عرض التفاصيل
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { handleEditTeacher(teacher); setOpenMenuId(null); }} 
+                                                            className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                        >
+                                                            تحرير البيانات
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { handleDeleteTeacher(teacher.id); setOpenMenuId(null); }} 
+                                                            className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                                        >
+                                                            حذف
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
