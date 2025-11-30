@@ -135,10 +135,11 @@ export default function PrintView({
            <table className="w-full border-collapse border-2 border-black text-sm text-center">
               <thead>
                  <tr className="bg-gray-200">
-                    <th className="border border-black p-2 w-[50%] text-right pr-4">مجال التقييم (المؤشر)</th>
-                    <th className="border border-black p-2">الوزن</th>
-                    <th className="border border-black p-2">الدرجة المستحقة</th>
-                    <th className="border border-black p-2">المستوى</th>
+                    <th className="border border-black p-2 w-[40%] text-right pr-4">مجال التقييم (المؤشر)</th>
+                    <th className="border border-black p-2 w-[10%]">الوزن</th>
+                    <th className="border border-black p-2 w-[15%]">المستوى (1-5)</th>
+                    <th className="border border-black p-2 w-[15%]">الدرجة الموزونة</th>
+                    <th className="border border-black p-2 w-[20%]">مستوى الإتقان</th>
                  </tr>
               </thead>
               <tbody>
@@ -148,14 +149,14 @@ export default function PrintView({
                         <tr key={ind.id}>
                             <td className="border border-black p-2 text-right pr-4 font-medium">{ind.text}</td>
                             <td className="border border-black p-2 bg-gray-50">{ind.weight}</td>
-                            <td className="border border-black p-2 font-bold">{data.score % 1 === 0 ? data.score : data.score.toFixed(1)}</td>
-                            <td className="border border-black p-2 text-xs">{ind.rubric[data.level]?.description?.split(' ')[0] || '-'} ({data.level || 0})</td>
+                            <td className="border border-black p-2 font-bold">{data.level} / 5</td>
+                            <td className="border border-black p-2 font-bold bg-gray-50">{data.score % 1 === 0 ? data.score : data.score.toFixed(1)}</td>
+                            <td className="border border-black p-2 text-xs">{data.score > 0 ? getMasteryLevel((data.score / ind.weight) * 100) : '-'}</td>
                         </tr>
                     )
                  })}
                  <tr className="font-black bg-gray-100 text-base border-t-2 border-black">
-                    <td className="border border-black p-3 text-right pr-4">المجموع الكلي</td>
-                    <td className="border border-black p-3">100</td>
+                    <td className="border border-black p-3 text-right pr-4" colSpan={3}>المجموع الكلي</td>
                     <td className="border border-black p-3 text-lg">{totalScore.toFixed(1)}</td>
                     <td className="border border-black p-3">{getMasteryLevel(totalScore)}</td>
                  </tr>
@@ -163,35 +164,42 @@ export default function PrintView({
            </table>
         </div>
 
-        {/* Detailed Indicators */}
+        {/* Detailed Indicators with Strengths/Weaknesses */}
         <div className="space-y-6">
-           <h3 className="font-bold mb-2 text-lg border-r-4 border-black pr-2">تفاصيل الأداء والملاحظات</h3>
+           <h3 className="font-bold mb-2 text-lg border-r-4 border-black pr-2">تفاصيل الأداء (نقاط القوة والتحسين)</h3>
            {indicators.map((ind, idx) => (
               <div key={ind.id} className="border border-black rounded-lg break-inside-avoid overflow-hidden">
                  <div className="flex justify-between items-center bg-gray-100 p-2 border-b border-black">
                     <span className="font-bold text-sm">{idx + 1}. {ind.text}</span>
                     <div className="flex gap-4 text-xs font-bold">
-                       <span className="bg-white border border-black px-2 py-1 rounded">الدرجة: {scores[ind.id]?.score || 0} / {ind.weight}</span>
+                       <span className="bg-white border border-black px-2 py-1 rounded">المستوى: {scores[ind.id]?.level || 0}</span>
+                       <span className="bg-white border border-black px-2 py-1 rounded">الدرجة الموزونة: {scores[ind.id]?.score?.toFixed(1) || 0}</span>
                     </div>
                  </div>
                  
                  <div className="p-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Notes Section */}
-                    <div className="border-l-0 md:border-l border-gray-300 pl-0 md:pl-4">
-                       <p className="font-bold text-xs mb-1 underline">نقاط القوة / الملاحظات:</p>
-                       <p className="text-gray-800 leading-relaxed min-h-[1.5em]">
-                          {scores[ind.id]?.notes || '---'}
+                    {/* Strengths Section */}
+                    <div className="border-l-0 md:border-l border-black pl-0 md:pl-4">
+                       <p className="font-bold text-xs mb-1 underline">نقاط القوة:</p>
+                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify">
+                          {scores[ind.id]?.strengths || '---'}
                        </p>
                     </div>
 
                     {/* Improvement Section */}
                     <div>
-                       <p className="font-bold text-xs mb-1 underline">فرص التحسين:</p>
-                       <p className="text-gray-800 leading-relaxed min-h-[1.5em]">
+                       <p className="font-bold text-xs mb-1 underline">فرص التحسين (الخطة):</p>
+                       <p className="text-gray-800 leading-relaxed min-h-[1.5em] text-justify">
                           {scores[ind.id]?.improvement || '---'}
                        </p>
                     </div>
                  </div>
+                 {/* Optional Notes */}
+                 {scores[ind.id]?.notes && (
+                     <div className="p-2 border-t border-gray-300 bg-gray-50 text-xs">
+                         <span className="font-bold">ملاحظات إضافية:</span> {scores[ind.id]?.notes}
+                     </div>
+                 )}
               </div>
            ))}
         </div>

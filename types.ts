@@ -87,12 +87,13 @@ export interface EvaluationIndicator {
 
 export interface EvaluationScore {
   indicatorId: string;
-  level: number; // 1-5
-  score: number; // Calculated based on weight
-  subScores?: number[]; // Array of scores corresponding to criteria indices
+  level: number; // 1-5 (Likert Scale Input)
+  score: number; // Calculated Weighted Score
+  subScores?: number[]; 
   evidence: string;
   notes: string;
-  improvement: string;
+  improvement: string; // Opportunities for improvement
+  strengths?: string; // Points of strength (New Field)
   isComplete: boolean;
 }
 
