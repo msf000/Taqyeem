@@ -57,7 +57,7 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script - Updated to use ARRAY for roles to allow single record with multiple roles
+  // SQL Script - Updated with RICH PEDAGOGICAL CONTENT
   const fullSchemaScript = `
 -- ==========================================
 -- 1. تحديث هيكلية تعدد الصلاحيات (سجل واحد، أدوار متعددة)
@@ -95,7 +95,104 @@ ON app_users (email, school_id);
 ALTER TABLE school_events ADD COLUMN IF NOT EXISTS school_id uuid REFERENCES schools(id) ON DELETE CASCADE;
 
 -- ==========================================
--- 3. إصلاح مشاكل الحذف (Constraints Fixes)
+-- 3. بنك الملاحظات والعبارات (جديد)
+-- ==========================================
+
+create table if not exists feedback_bank (
+  id uuid default gen_random_uuid() primary key,
+  category text check (category in ('strength', 'improvement', 'action')),
+  phrase_text text not null,
+  tags text[], -- keywords to match criteria e.g., ['تخطيط', 'استراتيجيات']
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- حذف البيانات القديمة (اختياري، لضمان نظافة البيانات عند التحديث)
+DELETE FROM feedback_bank;
+
+-- إضافة البيانات التربوية المتخصصة (11 معيار)
+INSERT INTO feedback_bank (category, tags, phrase_text) VALUES
+-- 1. أداء الواجبات (انضباط، لوائح)
+('strength', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'نموذج يُحتذى به في الانضباط الوظيفي والالتزام باللوائح، ويظهر وعياً تاماً بمسؤولياته الإدارية والتربوية. (يعكس المعلم صورة مشرفة للمعلم المنضبط)'),
+('improvement', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'ضعف في الالتزام ببعض الضوابط التنظيمية (مثل الحضور أو المناوبة) أو اللوائح المدرسية.'),
+('action', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'الاطلاع الدقيق على "مدونة السلوك الوظيفي" والالتزام بجدول الدوام والمناوبة بدقة تامة.'),
+
+-- 2. القيم الوطنية
+('strength', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'نموذج يُحتذى به في غرس القيم الوطنية، ويظهر ذلك جلياً في ربط الدروس بالهوية الوطنية والمناسبات الرسمية.'),
+('improvement', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'غياب الربط بين المادة العلمية والقيم الوطنية، وضعف تعزيز روح الانتماء لدى الطلاب.'),
+('action', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'تخصيص 5 دقائق أسبوعياً أو تضمين نشاط واحد يربط موضوع الدرس بقيمة وطنية أو منجز وطني.'),
+
+-- 3. سرية البيانات
+('strength', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'نموذج يُحتذى به في الأمانة المهنية، ويظهر حرصاً شديداً على سرية بيانات الطلاب وعدم تداولها إلا في النطاق المصرح به.'),
+('improvement', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'التهاون في تداول درجات الطلاب أو معلوماتهم الخاصة في أماكن عامة أو غير مخصصة.'),
+('action', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'الالتزام التام بسياسة "خصوصية البيانات" وعدم مناقشة شؤون الطلاب إلا مع المعنيين (المرشد/الإدارة).'),
+
+-- 4. التطوير المهني (مجتمع مهني)
+('strength', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'نموذج يُحتذى به في الشغف بالتطوير الذاتي، ويحرص باستمرار على حضور اللقاءات التربوية ونقل أثرها للزملاء.'),
+('improvement', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'الاكتفاء بالحد الأدنى من الأداء وعدم المشاركة في برامج التطوير المهني المتاحة.'),
+('action', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'التسجيل في دورة تدريبية تخصصية واحدة على الأقل هذا الفصل، وتقديم تقرير عما تم تعلمه.'),
+
+-- 5. التعاون (PLC)
+('strength', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'نموذج يُحتذى به في العمل بروح الفريق، ويظهر مبادرة عالية في دعم الزملاء ومشاركة المصادر التعليمية.'),
+('improvement', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'الانعزال المهني وقلة المشاركة في فرق العمل أو تبادل الزيارات الفنية.'),
+('action', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'المشاركة الفعالة في "مجتمعات التعلم المهنية" وتنفيذ درس تطبيقي أو زيارة تبادلية لزميل.'),
+
+-- 6. التواصل مع أولياء الأمور
+('strength', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'نموذج يُحتذى به في بناء شراكة إيجابية مع أولياء الأمور، ويظهر مهارة عالية في التواصل واحتواء الملاحظات بمهنية.'),
+('improvement', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'ضعف قنوات التواصل مع الأسرة، أو الاقتصار على التواصل السلبي عند وجود مشكلات فقط.'),
+('action', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'تفعيل سجل التواصل الدوري لإطلاع ولي الأمر على مستوى الطالب (الإيجابي والسلبي) بانتظام.'),
+
+-- 7. استراتيجيات التدريس
+('strength', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'نموذج يُحتذى به في اختيار وتكييف استراتيجيات التدريس، ويظهر تمكناً في جعل الطالب محور العملية التعليمية.'),
+('improvement', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'الاعتماد النمطي على طريقة واحدة (غالباً الإلقاء) وعدم تكييف التدريس حسب طبيعة الدرس.'),
+('action', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'الاطلاع على حقيبة "استراتيجيات التدريس النشط" وتطبيق استراتيجية مختلفة لكل وحدة دراسية.'),
+
+-- 8. الفروق الفردية
+('strength', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'نموذج يُحتذى به في التعليم المتمايز، ويظهر اهتماماً بجميع فئات الطلاب (الموهوب، المتوسط، المتعثر).'),
+('improvement', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'التدريس موجه لمستوى واحد فقط مع إهمال الفروق الفردية بين الطلاب.'),
+('action', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'تصميم أنشطة متدرجة الصعوبة في ورقة العمل الواحدة لتناسب جميع المستويات.'),
+
+-- 9. التفكير والإبداع
+('strength', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'نموذج يُحتذى به في إثارة الذهن، ويظهر براعة في استخدام أسئلة التفكير العليا وحل المشكلات.'),
+('improvement', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'التركيز المنصب على مهارات الحفظ والتذكر الدنيا، وإهمال مهارات التحليل والابتكار.'),
+('action', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'صياغة سؤالين على الأقل في كل حصة يستهدفان "مهارات التفكير العليا" وإتاحة الفرصة للطلاب للإجابة.'),
+
+-- 10. التغذية الراجعة
+('strength', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'نموذج يُحتذى به في تقديم التغذية الراجعة النوعية، ويظهر دقة في توجيه الطلاب لتصحيح مسار تعلمهم فورياً.'),
+('improvement', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'التغذية الراجعة عامة (مثل: أحسنت/راجِع) ولا توضح للطالب نقاط القوة والضعف بدقة.'),
+('action', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'تقديم تغذية راجعة مكتوبة ومفصلة على أعمال الطلاب توضح "ماذا أجاد" و"ماذا يحتاج للتطوير".'),
+
+-- 11. التخطيط والإعداد
+('strength', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'نموذج يُحتذى به في التخطيط المتقن، ويظهر توافقاً تاماً وتسلسلاً منطقياً بين الأهداف والأنشطة والتقويم.'),
+('improvement', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'الإعداد الكتابي شكلي، أو وجود فجوة كبيرة بين ما هو مكتوب في الخطة وما ينفذ داخل الصف.'),
+('action', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'إعداد الدروس وفق عناصر "الدليل التنظيمي"، والتأكد من تطابق الأهداف مع الأنشطة الزمنية.'),
+
+-- 12. التقنية والوسائل
+('strength', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'نموذج يُحتذى به في الرقمنة التعليمية، ويظهر ابتكاراً في توظيف التطبيقات والمنصات لخدمة أهداف الدرس.'),
+('improvement', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'غياب استخدام الوسائل التعليمية أو التقنية، والاعتماد الكلي على الكتاب المدرسي والسبورة فقط.'),
+('action', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'تفعيل أدوات "منصة مدرستي" أو استخدام تطبيق تفاعلي واحد (مثل Kahoot) لكسر الجمود وزيادة التفاعل.'),
+
+-- 13. البيئة الصفية
+('strength', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'نموذج يُحتذى به في توفير بيئة صفية جاذبة وآمنة نفسياً، ويظهر علاقة إيجابية يسودها الاحترام مع الطلاب.'),
+('improvement', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'البيئة الصفية يسودها التوتر أو الخمول، وضعف التواصل الإيجابي المشجع مع الطلاب.'),
+('action', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'استخدام عبارات التعزيز الإيجابي المتنوعة، والحرص على العدالة في التعامل مع جميع الطلاب.'),
+
+-- 14. الإدارة الصفية
+('strength', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'نموذج يُحتذى به في القيادة الصفية، ويظهر حزماً تربوياً ومرونة تضمن استثمار كل دقيقة في التعلم.'),
+('improvement', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'وجود فوضى في الفصل أو هدر للوقت التعليمي في أمور إدارية وسلوكية بسبب ضعف السيطرة.'),
+('action', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'وضع "ميثاق للفصل" بالاتفاق مع الطلاب وتطبيقه بحزم وعدالة منذ الدقيقة الأولى للحصة.'),
+
+-- 15. تحليل النتائج
+('strength', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'نموذج يُحتذى به في قراءة المؤشرات الرقمية، ويظهر مهارة في تحويل نتائج الاختبارات إلى خطط علاجية واقعية.'),
+('improvement', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'الاكتفاء برصد الدرجات دون تحليل، وعدم معرفة المهارات التي أخفق فيها الطلاب.'),
+('action', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'تحليل نتائج الاختبارات القصيرة وتحديد "المهارات المفقودة" لإعادة تدريسها بطريقة مختلفة.'),
+
+-- 16. تنوع التقويم
+('strength', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'نموذج يُحتذى به في العدالة والشمولية، ويظهر تنوعاً في أدوات القياس (شفهي، تحريري، أدائي، مشاريع).'),
+('improvement', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'الاعتماد الحصري على الاختبارات التحريرية كأداة وحيدة للتقييم وإهمال الجوانب المهارية والوجدانية.'),
+('action', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'تفعيل "ملف الإنجاز" و"المهام الأدائية" كجزء أساسي من عملية تقييم الطالب.');
+
+-- ==========================================
+-- 4. إصلاح مشاكل الحذف (Constraints Fixes)
 -- ==========================================
 
 -- إصلاح علاقة التقييمات بالمعلمين (حذف التقييم عند حذف المعلم)
@@ -124,7 +221,7 @@ ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_school_id_fkey
     FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
 
 -- ==========================================
--- 4. التأكد من هيكلية الجداول
+-- 5. التأكد من هيكلية الجداول الأساسية
 -- ==========================================
 
 create table if not exists schools (
@@ -146,7 +243,7 @@ create table if not exists teachers (
   specialty text,
   category text, 
   role text default 'المعلم',
-  roles text[] default '{}', -- New Array Column
+  roles text[] default '{}', 
   mobile text,
   password text,
   school_id uuid references schools(id) on delete set null,
@@ -217,7 +314,6 @@ create table if not exists evaluations (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- جدول الشواهد المستقل (بنك الشواهد)
 create table if not exists teacher_evidence (
   id uuid default gen_random_uuid() primary key,
   teacher_id uuid references teachers(id) on delete cascade,
@@ -256,43 +352,28 @@ ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] default '{}';
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
 
 -- ==========================================
--- 5. تحديث سياسات الأمان (RLS)
+-- 6. تحديث سياسات الأمان (RLS)
 -- ==========================================
 
--- Schools
+-- تفعيل RLS لجميع الجداول
 alter table schools enable row level security;
-drop policy if exists "Public Access" on schools;
-create policy "Public Access" on schools for all using (true);
-
--- App Users
 alter table app_users enable row level security;
-drop policy if exists "Public Access" on app_users;
-create policy "Public Access" on app_users for all using (true);
-
--- Subscriptions
 alter table subscriptions enable row level security;
-drop policy if exists "Public Access" on subscriptions;
-create policy "Public Access" on subscriptions for all using (true);
-
--- Specialties
 alter table specialties enable row level security;
-drop policy if exists "Public Access" on specialties;
-create policy "Public Access" on specialties for all using (true);
-
--- School Events
 alter table school_events enable row level security;
-drop policy if exists "Public Access" on school_events;
-create policy "Public Access" on school_events for all using (true);
-
--- Evaluations
 alter table evaluations enable row level security;
-drop policy if exists "Public Access" on evaluations;
-create policy "Public Access" on evaluations for all using (true);
-
--- Teacher Evidence
 alter table teacher_evidence enable row level security;
-drop policy if exists "Public Access" on teacher_evidence;
-create policy "Public Access" on teacher_evidence for all using (true);
+alter table feedback_bank enable row level security;
+
+-- حذف السياسات القديمة وإنشاء سياسات عامة (للتسهيل في النسخة الحالية)
+drop policy if exists "Public Access" on schools; create policy "Public Access" on schools for all using (true);
+drop policy if exists "Public Access" on app_users; create policy "Public Access" on app_users for all using (true);
+drop policy if exists "Public Access" on subscriptions; create policy "Public Access" on subscriptions for all using (true);
+drop policy if exists "Public Access" on specialties; create policy "Public Access" on specialties for all using (true);
+drop policy if exists "Public Access" on school_events; create policy "Public Access" on school_events for all using (true);
+drop policy if exists "Public Access" on evaluations; create policy "Public Access" on evaluations for all using (true);
+drop policy if exists "Public Access" on teacher_evidence; create policy "Public Access" on teacher_evidence for all using (true);
+drop policy if exists "Public Access" on feedback_bank; create policy "Public Access" on feedback_bank for all using (true);
 
 NOTIFY pgrst, 'reload schema';
 `;
@@ -363,7 +444,8 @@ NOTIFY pgrst, 'reload schema';
               'app_users',
               'evaluations',
               'teacher_evidence', // Include new table
-              'subscriptions'
+              'subscriptions',
+              'feedback_bank' // Include new table
           ];
           
           const backupData: any = {
@@ -437,7 +519,8 @@ NOTIFY pgrst, 'reload schema';
                   'app_users', // Depends on schools
                   'evaluations', // Depends on teachers & schools
                   'teacher_evidence', // Depends on teachers & indicators
-                  'subscriptions' // Depends on schools
+                  'subscriptions', // Depends on schools
+                  'feedback_bank'
               ];
 
               for (const table of tablesOrder) {
@@ -1109,7 +1192,7 @@ NOTIFY pgrst, 'reload schema';
                         <div className="flex-1">
                             <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات وإصلاح القيود</h2>
                             <p className="text-gray-500 mb-4 text-sm leading-relaxed">
-                                يحتوي السكربت أدناه على إصلاح <strong>تفرد البيانات (البريد والهوية)</strong> للسماح بنفس المستخدم في مدارس متعددة بصلاحيات مختلفة.
+                                يحتوي السكربت أدناه على إصلاح <strong>تفرد البيانات (البريد والهوية)</strong> وإنشاء جداول <strong>بنك الملاحظات</strong> الجديدة.
                             </p>
                             
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -1117,7 +1200,7 @@ NOTIFY pgrst, 'reload schema';
                                     <AlertTriangle size={16} /> تحديث هام
                                 </h4>
                                 <p className="text-xs text-blue-800">
-                                    لتفعيل كافة التحديثات الأخيرة وإضافة الأعمدة الناقصة، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
+                                    لتفعيل ميزة توليد الملاحظات الذكية من قاعدة البيانات، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
                                 </p>
                             </div>
 

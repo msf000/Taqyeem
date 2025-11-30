@@ -27,6 +27,9 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const [teacherEvidenceLinks, setTeacherEvidenceLinks] = useState<{ id: string, indicatorId: string, url: string, description: string }[]>([]);
   const [availableEvents, setAvailableEvents] = useState<SchoolEvent[]>([]);
 
+  // Feedback Bank Cache (Hybrid: DB + Local Fallback)
+  const [feedbackBank, setFeedbackBank] = useState<any[]>([]);
+
   const [teacherDetails, setTeacherDetails] = useState<{
       name: string;
       nationalId: string;
@@ -69,6 +72,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     const fetchAllData = async () => {
       setIsLoading(true);
       try {
+        // Fetch Teacher Data
         const { data: teacherData, error: teacherError } = await supabase
             .from('teachers')
             .select('*, schools(name, ministry_id)')
@@ -91,6 +95,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
         const teacherCategory: TeacherCategory = teacherData?.category as TeacherCategory;
 
+        // Fetch Indicators
         const { data: indData, error: indError } = await supabase
           .from('evaluation_indicators')
           .select(`
@@ -126,6 +131,14 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             });
 
         setIndicators(mappedIndicators);
+
+        // Fetch Feedback Bank (Try to load from DB)
+        try {
+            const { data: bankData } = await supabase.from('feedback_bank').select('*');
+            if (bankData && bankData.length > 0) {
+                setFeedbackBank(bankData);
+            }
+        } catch(e) { console.log('Feedback bank fetch failed, using local fallback'); }
 
         // Fetch Events
         try {
@@ -235,18 +248,34 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     return () => clearTimeout(timeoutId);
   }, [scores, generalNotes]);
 
-  // --- Handlers ---
-  const handleStartEvaluation = async () => {
-      if (!period.name) return alert('يرجى اختيار الفترة');
-      const success = await saveToDb(true);
-      if (success) setStep('scoring');
-  };
+  // --- Smart Generator Helpers ---
+  const getFeedbackForIndicator = (indicatorText: string, category: string) => {
+      // 1. Try strict match in DB bank tags
+      if (feedbackBank.length > 0) {
+          // Normalize text for matching
+          const normInd = indicatorText.trim();
+          
+          // Find entries where any tag is present in the indicator text
+          const matches = feedbackBank.filter(f => {
+              if (f.category !== category) return false;
+              if (!f.tags || f.tags.length === 0) return false;
+              // Check if any tag is included in the indicator text
+              return f.tags.some((tag: string) => normInd.includes(tag));
+          });
 
-  const handleFinish = async () => {
-      const success = await saveToDb(true);
-      if (success) {
-          onBack();
+          if (matches.length > 0) {
+              // Return the best match (or random from matches)
+              const match = matches[Math.floor(Math.random() * matches.length)];
+              return match.phrase_text;
+          }
       }
+
+      // 2. Fallback Templates if no specific match found
+      if (category === 'strength') return "نموذج يُحتذى به في هذا المجال ويظهر تمكناً عالياً.";
+      if (category === 'improvement') return "يحتاج إلى تطوير مهاراته في هذا الجانب لتناسب الموقف التعليمي.";
+      if (category === 'action') return "الاطلاع على الأدلة الإجرائية وتطبيق الممارسات الصحيحة.";
+
+      return "";
   };
 
   const handleSubCriteriaChange = (indicator: EvaluationIndicator, criteriaIdx: number, value: number) => {
@@ -261,7 +290,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       const newSubScores = { ...(currentScoreData.subScores || {}), [criteriaIdx]: value };
       
       // 2. Calculate new main score
-      const subScoreValues = Object.values(newSubScores);
+      const subScoreValues = Object.values(newSubScores) as number[];
       const sumSubScores = subScoreValues.reduce((a, b) => a + b, 0);
       
       let newMainScore = 0;
@@ -277,31 +306,21 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
           newMainScore = value; 
       }
 
-      // 3. Smart Text Generation Logic (Professional & Supportive Tone)
-      const strengthPoints: string[] = [];
-      const improvementPoints: string[] = [];
-
-      indicator.evaluationCriteria.forEach((criteriaText, idx) => {
-          const s = newSubScores[idx];
-          if (s >= 4) {
-              strengthPoints.push(criteriaText);
-          } else if (s <= 2 && s > 0) {
-              improvementPoints.push(criteriaText);
-          }
-      });
-
+      // 3. Smart Text Generation Logic (DB-Driven)
       let autoStrengths = '';
-      if (strengthPoints.length > 0) {
-          autoStrengths = `يظهر المعلم تمكناً عالياً وأداءً متميزاً في: ${strengthPoints.join('، ')}، مما يعزز من جودة المخرجات التعليمية.`;
-      } else if (newLevel === 5) {
-          autoStrengths = "أداء احترافي متميز يعكس تمكناً كاملاً من المعايير.";
-      }
-
       let autoImprovement = '';
-      if (improvementPoints.length > 0) {
-          autoImprovement = `يوصى بتقديم الدعم والتوجيه للمعلم في: ${improvementPoints.join('، ')}، وإدراج ذلك ضمن خطة النمو المهني لرفع مستوى الأداء.`;
-      } else if (newLevel <= 2 && newLevel > 0) {
-          autoImprovement = "يحتاج المعلم إلى بناء خطة تطويرية مكثفة مع تقديم الدعم المستمر من قبل المشرف التربوي.";
+
+      // Logic: If average level >= 4, show strengths. If <= 3, show improvements.
+      if (newLevel >= 4) {
+          const phrase = getFeedbackForIndicator(indicator.text, 'strength');
+          autoStrengths = `• ${phrase}`;
+      } 
+      
+      if (newLevel <= 3 && newLevel > 0) {
+          const improvementPhrase = getFeedbackForIndicator(indicator.text, 'improvement');
+          const actionPhrase = getFeedbackForIndicator(indicator.text, 'action');
+          
+          autoImprovement = `🔍 فرص التحسين (التشخيص):\n• ${improvementPhrase}\n\n🛠️ خطة الدعم والتوجيه (الإجراءات):\n1. ${actionPhrase}`;
       }
 
       setScores(prev => ({
@@ -312,8 +331,8 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
               score: parseFloat(newMainScore.toFixed(2)),
               level: newLevel,
               isComplete: subScoreValues.length === indicator.evaluationCriteria.length,
-              strengths: autoStrengths,   // Auto update
-              improvement: autoImprovement // Auto update
+              strengths: autoStrengths,   // Updated logic
+              improvement: autoImprovement // Updated logic
           }
       }));
   };
@@ -342,14 +361,17 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
     return (Object.values(scores) as EvaluationScore[]).reduce((acc, curr) => acc + (curr.score || 0), 0);
   };
 
-  const getMasteryLevel = (score: number, max: number) => {
-    if (score === 0) return "--";
-    const percentage = (score / max) * 100;
-    if (percentage >= 90) return "مثالي (5)";
-    if (percentage >= 80) return "تخطى التوقعات (4)";
-    if (percentage >= 70) return "وافق التوقعات (3)";
-    if (percentage >= 50) return "بحاجة إلى تطوير (2)";
-    return "غير مرضي (1)";
+  const handleStartEvaluation = async () => {
+      if (!period.name) return alert('يرجى اختيار الفترة');
+      const success = await saveToDb(true);
+      if (success) setStep('scoring');
+  };
+
+  const handleFinish = async () => {
+      const success = await saveToDb(true);
+      if (success) {
+          onBack();
+      }
   };
 
   const completedCount = (Object.values(scores) as EvaluationScore[]).filter(s => s.score > 0).length;
@@ -391,7 +413,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             <span className="text-sm text-gray-500 mb-1">النتيجة الحالية</span>
             <div className="flex items-center gap-3">
                 <span className="text-3xl font-bold text-primary-600">{calculateTotal().toFixed(1)}</span>
-                <span className="text-sm bg-gray-100 px-2 py-1 rounded">{getMasteryLevel(calculateTotal(), 100)}</span>
+                <span className="text-sm bg-gray-100 px-2 py-1 rounded">{getIndicatorMasteryLevel(calculateTotal(), 100).label}</span>
             </div>
             <div className="flex items-center gap-1 mt-2 text-xs">
                  {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ...</span>}
@@ -605,12 +627,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                 <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-gray-100">
                                     <div>
                                         <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
-                                            <span>نقاط القوة (توليد تلقائي)</span>
+                                            <span>نقاط القوة (توليد تلقائي ذكي)</span>
                                             <Award size={14} className="text-green-600"/>
                                         </label>
                                         <textarea 
-                                            className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-green-500 outline-none resize-none"
-                                            placeholder="سيتم كتابة نقاط القوة بصيغة تعزيزية..."
+                                            className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none"
+                                            placeholder="سيتم صياغة نقاط القوة بتنوع واحترافية..."
                                             value={scores[activeInd.id]?.strengths || ''}
                                             onChange={(e) => updateField(activeInd.id, 'strengths', e.target.value)}
                                         />
@@ -621,8 +643,8 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                             <HeartHandshake size={14} className="text-yellow-600"/>
                                         </label>
                                         <textarea 
-                                            className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-yellow-500 outline-none resize-none"
-                                            placeholder="سيتم كتابة توصيات الدعم والتوجيه هنا..."
+                                            className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-yellow-500 outline-none resize-none leading-relaxed"
+                                            placeholder="سيتم كتابة خطة التطوير (تشخيص + إجراء + مؤشر)..."
                                             value={scores[activeInd.id]?.improvement || ''}
                                             onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
                                         />
@@ -662,7 +684,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                 </div>
                 <div className="text-center md:text-right">
                     <div className="text-sm text-gray-500 mb-1">التقدير اللفظي</div>
-                    <div className="text-2xl font-bold text-gray-800">{getMasteryLevel(calculateTotal(), 100)}</div>
+                    <div className="text-2xl font-bold text-gray-800">{getIndicatorMasteryLevel(calculateTotal(), 100).label}</div>
                 </div>
              </div>
 
