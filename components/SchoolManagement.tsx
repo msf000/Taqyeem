@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, School as SchoolIcon, Edit2, Trash2, Eye, Settings, Loader2, X, CheckSquare, Building } from 'lucide-react';
+import { Plus, School as SchoolIcon, Edit2, Trash2, Eye, Settings, Loader2, X, CheckSquare, Building, User } from 'lucide-react';
 import { School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 
@@ -65,6 +65,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
         type: item.type,
         ministryId: item.ministry_id,
         managerName: item.manager_name,
+        managerNationalId: item.manager_national_id, // Map new field
         evaluatorName: item.evaluator_name
       }));
 
@@ -94,6 +95,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
           stage: school.stage,
           type: school.type,
           managerName: school.managerName,
+          managerNationalId: school.managerNationalId,
           evaluatorName: school.evaluatorName
       });
       setEditingId(school.id);
@@ -118,6 +120,7 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
         type: formData.type,
         ministry_id: formData.ministryId,
         manager_name: manager,
+        manager_national_id: formData.managerNationalId, // Save new field
         evaluator_name: formData.evaluatorName
       };
 
@@ -281,6 +284,17 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                 />
             </div>
             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">رقم هوية المدير</label>
+                <input 
+                type="text" 
+                className={`w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none font-mono ${userRole === UserRole.PRINCIPAL ? 'bg-gray-50 text-gray-500' : ''}`}
+                placeholder="10xxxxxxxx"
+                value={formData.managerNationalId || ''}
+                onChange={e => setFormData({...formData, managerNationalId: e.target.value})}
+                disabled={userRole === UserRole.PRINCIPAL} // Lock for principals
+                />
+            </div>
+            <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">اسم مقيم الأداء</label>
                 <input 
                 type="text" 
@@ -359,6 +373,10 @@ export default function SchoolManagement({ userRole, schoolId, userName }: Schoo
                           <div>
                               <label className="text-xs text-gray-500">المدير</label>
                               <p className="font-medium">{viewSchool.managerName || '-'}</p>
+                          </div>
+                          <div>
+                              <label className="text-xs text-gray-500">هوية المدير</label>
+                              <p className="font-medium font-mono">{viewSchool.managerNationalId || '-'}</p>
                           </div>
                           <div className="col-span-2">
                               <label className="text-xs text-gray-500">المقيم المعتمد</label>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Plus, FileText, Calendar, ChevronLeft, Loader2, User, Printer, Eye } from 'lucide-react';
+import { ArrowRight, Plus, FileText, Calendar, ChevronLeft, Loader2, User, Printer, Eye, Trash2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { EvaluationStatus, EvaluationIndicator, TeacherCategory } from '../types';
 import PrintView from './PrintView';
@@ -30,31 +30,48 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
   const [printData, setPrintData] = useState<any>(null);
   const [loadingPrint, setLoadingPrint] = useState(false);
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch Teacher Name
+      const { data: teacher } = await supabase.from('teachers').select('name').eq('id', teacherId).single();
+      if (teacher) setTeacherName(teacher.name);
+
+      // Fetch Evaluations
+      const { data: evals, error } = await supabase
+          .from('evaluations')
+          .select('id, period_name, eval_date, total_score, status, created_at')
+          .eq('teacher_id', teacherId)
+          .order('eval_date', { ascending: false });
+
+      if (error) throw error;
+      setHistory(evals || []);
+    } catch (error) {
+      console.error('Error fetching history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        // Fetch Teacher Name
-        const { data: teacher } = await supabase.from('teachers').select('name').eq('id', teacherId).single();
-        if (teacher) setTeacherName(teacher.name);
-
-        // Fetch Evaluations
-        const { data: evals, error } = await supabase
-            .from('evaluations')
-            .select('id, period_name, eval_date, total_score, status, created_at')
-            .eq('teacher_id', teacherId)
-            .order('eval_date', { ascending: false });
-
-        if (error) throw error;
-        setHistory(evals || []);
-      } catch (error) {
-        console.error('Error fetching history:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, [teacherId]);
+
+  const handleDelete = async (evalId: string) => {
+      if (!window.confirm('هل أنت متأكد من حذف هذا التقييم؟ لا يمكن التراجع عن هذا الإجراء.')) return;
+
+      try {
+          const { error } = await supabase.from('evaluations').delete().eq('id', evalId);
+          if (error) throw error;
+          
+          // Remove from local state
+          setHistory(prev => prev.filter(e => e.id !== evalId));
+          alert('تم حذف التقييم بنجاح.');
+      } catch (error: any) {
+          console.error("Delete error:", error);
+          alert('فشل الحذف: ' + error.message);
+      }
+  };
 
   const handlePrint = async (evalId: string) => {
       setPrintingEvalId(evalId);
@@ -222,6 +239,13 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
                                         className="text-primary-600 hover:bg-primary-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
                                     >
                                         <Eye size={16} /> عرض / تعديل
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDelete(evalItem.id)}
+                                        className="text-red-500 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                                        title="حذف التقييم"
+                                    >
+                                        <Trash2 size={16} />
                                     </button>
                                 </td>
                             </tr>

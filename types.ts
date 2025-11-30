@@ -40,6 +40,7 @@ export interface School {
   type: string;
   ministryId: string;
   managerName: string;
+  managerNationalId?: string; // Added field
   evaluatorName: string;
 }
 
