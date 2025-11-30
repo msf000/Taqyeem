@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson, Lock } from 'lucide-react';
+import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson, Lock, AlertOctagon } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole, SystemUser, Subscription, School } from '../types';
 
@@ -12,6 +12,7 @@ export default function SystemSettings() {
   // Backup & Restore State
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isResetting, setIsResetting] = useState(false); // State for Factory Reset
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Data State
@@ -466,6 +467,54 @@ NOTIFY pgrst, 'reload schema';
       };
 
       reader.readAsText(file);
+  };
+
+  // --- Factory Reset Handler ---
+  const handleFactoryReset = async () => {
+      const confirmMsg = prompt('تحذير شديد: هذا الإجراء سيقوم بحذف جميع البيانات التشغيلية بما في ذلك:\n- المدارس\n- المعلمين\n- المستخدمين\n- التقييمات\n- الاشتراكات\n\nللتأكيد النهائي، يرجى كتابة عبارة "حذف الكل" في المربع أدناه:');
+      
+      if (confirmMsg !== 'حذف الكل') {
+          if (confirmMsg !== null) alert('لم يتم الحذف. العبارة المدخلة غير صحيحة.');
+          return;
+      }
+
+      setIsResetting(true);
+      try {
+          // Delete tables in correct order (Children first to respect Foreign Keys)
+          // Using .neq('id', '0000...') is a Supabase trick to delete all rows as 'id' is distinct from a dummy value
+          const dummyUUID = '00000000-0000-0000-0000-000000000000';
+
+          // 1. Evidence (Deepest child)
+          await supabase.from('teacher_evidence').delete().neq('id', dummyUUID);
+          
+          // 2. Evaluations
+          await supabase.from('evaluations').delete().neq('id', dummyUUID);
+          
+          // 3. School Events
+          await supabase.from('school_events').delete().neq('id', dummyUUID);
+          
+          // 4. Subscriptions
+          await supabase.from('subscriptions').delete().neq('id', dummyUUID);
+          
+          // 5. Users (Admins/Principals in app_users)
+          // Note: This effectively logs out the current user if they are in this table
+          await supabase.from('app_users').delete().neq('id', dummyUUID);
+          
+          // 6. Teachers (Includes Principals with Teacher role)
+          await supabase.from('teachers').delete().neq('id', dummyUUID);
+          
+          // 7. Schools (Parent)
+          await supabase.from('schools').delete().neq('id', dummyUUID);
+
+          alert('تم تصفية النظام بنجاح. سيتم إعادة تحميل الصفحة.');
+          window.location.reload();
+
+      } catch (error: any) {
+          console.error("Factory Reset Error:", error);
+          alert('حدث خطأ أثناء التصفية: ' + getErrorMessage(error));
+      } finally {
+          setIsResetting(false);
+      }
   };
 
   // --- User Handlers ---
@@ -1022,6 +1071,31 @@ NOTIFY pgrst, 'reload schema';
                                  {isRestoring ? <Loader2 className="animate-spin" size={16}/> : <UploadCloud size={16} />}
                                  {isRestoring ? 'جاري الاستعادة...' : 'رفع ملف النسخة'}
                              </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- DANGER ZONE: FACTORY RESET --- */}
+                <div className="bg-red-50 p-6 rounded-xl border border-red-200">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-red-100 rounded-lg text-red-600">
+                            <AlertOctagon size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-red-800 mb-1">منطقة الخطر: تصفية النظام</h2>
+                            <p className="text-red-700 mb-4 text-sm leading-relaxed">
+                                هذا الإجراء سيقوم بحذف <strong className="underline">جميع البيانات</strong> من جداول (المدارس، المعلمين، المستخدمين، التقييمات، الأحداث، الاشتراكات).
+                                <br/> لا يمكن التراجع عن هذه العملية بعد تنفيذها.
+                            </p>
+                            
+                            <button 
+                                onClick={handleFactoryReset}
+                                disabled={isResetting}
+                                className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isResetting ? <Loader2 className="animate-spin" size={18}/> : <Trash2 size={18} />}
+                                حذف جميع البيانات (تصفية النظام)
+                            </button>
                         </div>
                     </div>
                 </div>
