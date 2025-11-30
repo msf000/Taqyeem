@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, Star, ArrowLeft, Maximize2, Award } from 'lucide-react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, Star, ArrowLeft, Maximize2, Award, HeartHandshake } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
@@ -277,13 +277,13 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
           newMainScore = value; 
       }
 
-      // 3. Smart Text Generation Logic (Auto-fill)
+      // 3. Smart Text Generation Logic (Professional & Supportive Tone)
       const strengthPoints: string[] = [];
       const improvementPoints: string[] = [];
 
       indicator.evaluationCriteria.forEach((criteriaText, idx) => {
           const s = newSubScores[idx];
-          if (s === 5 || s === 4) {
+          if (s >= 4) {
               strengthPoints.push(criteriaText);
           } else if (s <= 2 && s > 0) {
               improvementPoints.push(criteriaText);
@@ -292,16 +292,16 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
       let autoStrengths = '';
       if (strengthPoints.length > 0) {
-          autoStrengths = "يتميز المعلم في: " + strengthPoints.join('، ') + ".";
+          autoStrengths = `يظهر المعلم تمكناً عالياً وأداءً متميزاً في: ${strengthPoints.join('، ')}، مما يعزز من جودة المخرجات التعليمية.`;
       } else if (newLevel === 5) {
-          autoStrengths = "أداء متميز وتطبيق احترافي لجميع المعايير.";
+          autoStrengths = "أداء احترافي متميز يعكس تمكناً كاملاً من المعايير.";
       }
 
       let autoImprovement = '';
       if (improvementPoints.length > 0) {
-          autoImprovement = "يوصى بالعمل على تحسين: " + improvementPoints.join('، ') + ".";
+          autoImprovement = `يوصى بتقديم الدعم والتوجيه للمعلم في: ${improvementPoints.join('، ')}، وإدراج ذلك ضمن خطة النمو المهني لرفع مستوى الأداء.`;
       } else if (newLevel <= 2 && newLevel > 0) {
-          autoImprovement = "يحتاج إلى خطة علاجية لرفع مستوى الأداء في هذا المؤشر.";
+          autoImprovement = "يحتاج المعلم إلى بناء خطة تطويرية مكثفة مع تقديم الدعم المستمر من قبل المشرف التربوي.";
       }
 
       setScores(prev => ({
@@ -605,24 +605,24 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                 <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-gray-100">
                                     <div>
                                         <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
-                                            <span>نقاط القوة (توليد تلقائي من المعايير 5-4)</span>
+                                            <span>نقاط القوة (توليد تلقائي)</span>
                                             <Award size={14} className="text-green-600"/>
                                         </label>
                                         <textarea 
                                             className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-green-500 outline-none resize-none"
-                                            placeholder="سيتم كتابة نقاط القوة هنا تلقائياً بناءً على اختيار الدرجات العالية..."
+                                            placeholder="سيتم كتابة نقاط القوة بصيغة تعزيزية..."
                                             value={scores[activeInd.id]?.strengths || ''}
                                             onChange={(e) => updateField(activeInd.id, 'strengths', e.target.value)}
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center justify-between">
-                                            <span>فرص التحسين (توليد تلقائي من المعايير 1-2)</span>
-                                            <TrendingUp size={14} className="text-yellow-600"/>
+                                            <span>الدعم والتوجيه (خطة التطوير)</span>
+                                            <HeartHandshake size={14} className="text-yellow-600"/>
                                         </label>
                                         <textarea 
                                             className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-yellow-500 outline-none resize-none"
-                                            placeholder="سيتم كتابة فرص التحسين هنا تلقائياً بناءً على اختيار الدرجات المنخفضة..."
+                                            placeholder="سيتم كتابة توصيات الدعم والتوجيه هنا..."
                                             value={scores[activeInd.id]?.improvement || ''}
                                             onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
                                         />
