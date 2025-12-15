@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
-import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
+import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2, RefreshCw, XCircle, Clock, Timer, Award } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { UserRole } from '../types';
+import { UserRole, SchoolEvent, EvaluationData } from '../types';
 
 interface DashboardProps {
   userId?: string;
@@ -12,6 +12,7 @@ interface DashboardProps {
   nationalId?: string; // Added prop
   onNavigate: (tab: any) => void;
   onImportClick: () => void;
+  onEvaluate?: (teacherId: string) => void; // Added for pending list action
 }
 
 const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description, gradient }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string, gradient?: string }) => (
@@ -45,7 +46,7 @@ const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white",
   </button>
 );
 
-export default function Dashboard({ userId, userName, userRole, schoolId, nationalId, onNavigate, onImportClick }: DashboardProps) {
+export default function Dashboard({ userId, userName, userRole, schoolId, nationalId, onNavigate, onImportClick, onEvaluate }: DashboardProps) {
   const [stats, setStats] = useState({
     schools: 0,
     teachers: 0,
@@ -56,6 +57,8 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
     objections: 0
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [pendingTeachers, setPendingTeachers] = useState<any[]>([]);
+  const [activeEvent, setActiveEvent] = useState<SchoolEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -64,6 +67,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
       specialty: string;
       schoolName: string;
   } | null>(null);
+  const [latestEval, setLatestEval] = useState<any | null>(null);
 
   const fetchStats = async () => {
     setLoading(true);
@@ -90,8 +94,20 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                     schoolName: schoolName || 'غير محدد'
                 });
             }
+
+            // Fetch Latest Evaluation
+            const { data: evalData } = await supabase
+                .from('evaluations')
+                .select('*')
+                .eq('teacher_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+            
+            if (evalData) setLatestEval(evalData);
+
         } else {
-            // Normal Admin/Principal Stats
+            // Normal Admin/Principal/Evaluator Stats
             
             // Schools count (Global for Admin)
             let schoolsCount = 0;
@@ -100,7 +116,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                 schoolsCount = count || 0;
             }
 
-            // Determine Target School ID for Principal
+            // Determine Target School ID
             let targetSchoolId = schoolId;
             if (userRole === UserRole.PRINCIPAL) {
                 if (!targetSchoolId && nationalId) {
@@ -114,7 +130,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
 
             // Teachers count
             let teachersQuery = supabase.from('teachers').select('*', { count: 'exact', head: true });
-            if (userRole === UserRole.PRINCIPAL) {
+            if (userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) {
                 if (targetSchoolId) {
                     teachersQuery = teachersQuery.eq('school_id', targetSchoolId);
                 } else {
@@ -129,15 +145,15 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
             let completedCount = 0;
             let objectionsCount = 0;
 
-            if (userRole === UserRole.PRINCIPAL) {
+            if (userRole === UserRole.PRINCIPAL || userRole === UserRole.EVALUATOR) {
                 if (targetSchoolId) {
-                    // Logic for Principal
-                    const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', targetSchoolId);
+                    // Logic for Principal & Evaluator
+                    const { data: schoolTeachers } = await supabase.from('teachers').select('id, name, specialty').eq('school_id', targetSchoolId);
                     const teacherIds = schoolTeachers?.map(t => t.id) || [];
                     
                     if (teacherIds.length > 0) {
                         const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
-                        const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
+                        const { data: completedEvalsData, count: cc } = await supabase.from('evaluations').select('teacher_id', { count: 'exact' }).in('teacher_id', teacherIds).eq('status', 'completed');
                         // Count Pending Objections
                         const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
                         
@@ -145,7 +161,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                         completedCount = cc || 0;
                         objectionsCount = oc || 0;
 
-                        // Fetch Recent Activity for Principal
+                        // Fetch Recent Activity
                         const { data: recent } = await supabase
                             .from('evaluations')
                             .select('id, teacher_id, total_score, created_at, status, teachers(name)')
@@ -154,8 +170,27 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                             .limit(3);
                         setRecentActivity(recent || []);
 
+                        // Fetch Pending Teachers List
+                        const evaluatedIds = new Set(completedEvalsData?.map(e => e.teacher_id));
+                        const pendingList = schoolTeachers?.filter(t => !evaluatedIds.has(t.id)).slice(0, 5) || [];
+                        setPendingTeachers(pendingList);
+
+                        // Fetch Active Event
+                        const { data: eventData } = await supabase
+                            .from('school_events')
+                            .select('*')
+                            .eq('school_id', targetSchoolId)
+                            .eq('status', 'active')
+                            .gte('end_date', new Date().toISOString())
+                            .order('end_date', { ascending: true })
+                            .limit(1)
+                            .single();
+                        
+                        if (eventData) setActiveEvent(eventData);
+
                     } else {
                         setRecentActivity([]);
+                        setPendingTeachers([]);
                     }
                 }
             } else if (userRole === UserRole.ADMIN) {
@@ -197,7 +232,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
 
   useEffect(() => {
     fetchStats();
-  }, [userRole, schoolId, userId, nationalId]); // Added nationalId to dependencies
+  }, [userRole, schoolId, userId, nationalId]); 
 
   const getRoleBadge = () => {
       switch(userRole) {
@@ -207,6 +242,14 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
           case UserRole.TEACHER: return <span className="bg-white/20 backdrop-blur-sm text-white text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المعلم</span>;
           default: return null;
       }
+  };
+
+  const getDaysRemaining = (endDate: string) => {
+      const end = new Date(endDate);
+      const now = new Date();
+      const diffTime = Math.abs(end.getTime() - now.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+      return diffDays;
   };
 
   const renderContent = () => {
@@ -270,29 +313,87 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
               );
 
           case UserRole.PRINCIPAL:
+          case UserRole.EVALUATOR:
               return (
                 <div className="space-y-8 animate-fade-in">
+                    {/* Active Event Banner */}
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                        {activeEvent ? (
+                            <div className="lg:col-span-4 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+                                
+                                <div className="flex items-center gap-4 z-10">
+                                    <div className="p-3 bg-white/20 backdrop-blur-md rounded-xl">
+                                        <Calendar size={32} className="text-white"/>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-xl mb-1">{activeEvent.name}</h3>
+                                        <p className="text-emerald-100 text-sm flex items-center gap-2">
+                                            <Timer size={14}/> ينتهي في: {new Date(activeEvent.end_date).toLocaleDateString('ar-SA')}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4 z-10 w-full md:w-auto bg-white/10 p-3 rounded-xl border border-white/10">
+                                    <div className="text-center px-4 border-l border-white/20">
+                                        <span className="block text-2xl font-bold">{getDaysRemaining(activeEvent.end_date)}</span>
+                                        <span className="text-xs text-emerald-100">يوم متبقي</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => onNavigate('events')}
+                                        className="bg-white text-emerald-800 px-4 py-2 rounded-lg font-bold text-sm hover:bg-emerald-50 transition-colors"
+                                    >
+                                        تفاصيل الفترة
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-dashed border-gray-300 flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 text-gray-500">
+                                    <Clock size={24} />
+                                    <div>
+                                        <h3 className="font-bold text-gray-700">لا توجد فترة تقييم نشطة</h3>
+                                        <p className="text-sm">لا يوجد حالياً فترات تقييم فعالة في النظام.</p>
+                                    </div>
+                                </div>
+                                {userRole === UserRole.PRINCIPAL && (
+                                    <button onClick={() => onNavigate('events')} className="text-primary-600 font-bold text-sm hover:underline">إدارة الأحداث</button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                         <QuickAccessCard 
                             icon={<Users size={28} />} 
                             title="قائمة المعلمين" 
                             count={stats.teachers}
-                            description="إدارة ومتابعة معلمي المدرسة"
+                            description={userRole === UserRole.PRINCIPAL ? "إدارة ومتابعة معلمي المدرسة" : "عرض قائمة المعلمين"}
                             onClick={() => onNavigate('teachers')} 
                         />
                         <QuickAccessCard 
                             icon={<Star size={28} />} 
                             title="التقييمات المنجزة" 
                             count={stats.completedEvals}
-                            description="عرض نتائج الأداء الوظيفي"
-                            onClick={() => onNavigate('analytics')} 
+                            description="التقييمات التي تم اعتمادها"
+                            onClick={() => onNavigate(userRole === UserRole.PRINCIPAL ? 'analytics' : 'teachers')} 
                         />
-                        <QuickAccessCard 
-                            icon={<Upload size={28} />} 
-                            title="استيراد البيانات" 
-                            description="رفع بيانات المعلمين (Excel)"
-                            onClick={onImportClick} 
-                        />
+                        {userRole === UserRole.PRINCIPAL && (
+                            <QuickAccessCard 
+                                icon={<Upload size={28} />} 
+                                title="استيراد البيانات" 
+                                description="رفع بيانات المعلمين (Excel)"
+                                onClick={onImportClick} 
+                            />
+                        )}
+                        {userRole === UserRole.EVALUATOR && (
+                            <QuickAccessCard 
+                                icon={<BookOpen size={28} />} 
+                                title="دليل المؤشرات" 
+                                description="استعراض معايير التقييم"
+                                onClick={() => onNavigate('indicators')} 
+                            />
+                        )}
                          <QuickAccessCard 
                             icon={<MessageSquareWarning size={28} />} 
                             title="الاعتراضات" 
@@ -304,34 +405,42 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Progress Section */}
+                        {/* Pending Evaluations List */}
                         <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-2xl border border-secondary-100 shadow-card">
-                            <h3 className="font-bold text-lg md:text-xl text-secondary-800 mb-6 flex items-center gap-2">
-                                <FileBarChart size={20} className="text-primary-600"/>
-                                حالة التقييم في المدرسة
+                            <h3 className="font-bold text-lg md:text-xl text-secondary-800 mb-6 flex items-center justify-between">
+                                <span className="flex items-center gap-2"><Clock size={20} className="text-orange-500"/> بانتظار التقييم</span>
+                                {pendingTeachers.length > 0 && <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full">{pendingTeachers.length} معلم</span>}
                             </h3>
-                            <div className="flex items-center gap-4 md:gap-6">
-                                <div className="flex-1 bg-secondary-100 rounded-full h-4 md:h-5 overflow-hidden shadow-inner relative">
-                                    <div 
-                                        className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all duration-1000 rounded-full relative" 
-                                        style={{ width: `${stats.teachers > 0 ? (stats.completedEvals / stats.teachers) * 100 : 0}%` }}
-                                    >
-                                        <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                                    </div>
+                            
+                            {pendingTeachers.length > 0 ? (
+                                <div className="space-y-3">
+                                    {pendingTeachers.map((teacher, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-white text-gray-500 flex items-center justify-center font-bold border border-gray-200">
+                                                    {teacher.name.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm text-gray-800">{teacher.name}</p>
+                                                    <p className="text-xs text-gray-500">{teacher.specialty}</p>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => onEvaluate && onEvaluate(teacher.id)}
+                                                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary-700 shadow-sm"
+                                            >
+                                                تقييم
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button onClick={() => onNavigate('teachers')} className="w-full text-center text-sm text-primary-600 hover:text-primary-800 font-bold mt-2 pt-2 border-t border-gray-100">عرض الجميع</button>
                                 </div>
-                                <span className="font-bold text-xl md:text-2xl text-secondary-700 w-16 text-left">
-                                    {stats.teachers > 0 ? Math.round((stats.completedEvals / stats.teachers) * 100) : 0}%
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center mt-4 text-sm">
-                                <p className="text-secondary-500 flex items-center gap-2">
-                                    <CheckCircle2 size={16} className="text-green-500"/>
-                                    تم تقييم <strong className="text-secondary-800">{stats.completedEvals}</strong> من أصل <strong className="text-secondary-800">{stats.teachers}</strong>
-                                </p>
-                                <p className="text-secondary-400">
-                                    المتبقي: <strong className="text-secondary-600">{Math.max(0, stats.teachers - stats.completedEvals)}</strong>
-                                </p>
-                            </div>
+                            ) : (
+                                <div className="text-center py-8 text-gray-400">
+                                    <CheckCircle2 size={48} className="mx-auto mb-2 text-green-200"/>
+                                    <p>رائع! تم تقييم جميع المعلمين.</p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Recent Activity Section */}
@@ -363,7 +472,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                                         </div>
                                     ))}
                                     <button onClick={() => onNavigate('teachers')} className="text-xs text-primary-600 hover:text-primary-800 block text-center w-full mt-2 font-medium">
-                                        عرض الكل
+                                        عرض السجل الكامل
                                     </button>
                                 </div>
                             ) : (
@@ -373,35 +482,6 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                             )}
                         </div>
                     </div>
-                </div>
-              );
-
-          case UserRole.EVALUATOR:
-              return (
-                <div className="space-y-8 animate-fade-in">
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                        <QuickAccessCard 
-                            icon={<UserCheck size={32} />} 
-                            title="المعلمين المسندين" 
-                            count={stats.teachers}
-                            description="المعلمين المطلوب تقييمهم"
-                            onClick={() => onNavigate('teachers')}
-                            gradient="bg-gradient-to-br from-orange-500 to-orange-700"
-                        />
-                        <QuickAccessCard 
-                            icon={<Star size={32} />} 
-                            title="تقييمات مكتملة" 
-                            count={stats.completedEvals}
-                            description="التقييمات التي تم اعتمادها"
-                            onClick={() => onNavigate('teachers')} 
-                        />
-                         <QuickAccessCard 
-                            icon={<BookOpen size={32} />} 
-                            title="دليل المؤشرات" 
-                            description="استعراض معايير التقييم"
-                            onClick={() => {}} 
-                        />
-                     </div>
                 </div>
               );
 
@@ -423,6 +503,37 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                             </span>
                         </div>
                         
+                        {/* Latest Evaluation Status Card */}
+                        {latestEval && (
+                            <div className="mb-8 mx-auto max-w-xl">
+                                <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden text-right">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h4 className="font-bold text-lg flex items-center gap-2">
+                                            <Award className="text-yellow-400"/> حالة الأداء الحالي
+                                        </h4>
+                                        <span className={`text-xs px-2 py-1 rounded font-bold ${latestEval.status === 'completed' ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'}`}>
+                                            {latestEval.status === 'completed' ? 'معتمد' : 'مسودة'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-6">
+                                        <div className="w-20 h-20 rounded-full border-4 border-white/20 flex items-center justify-center text-2xl font-bold bg-white/10 backdrop-blur-md">
+                                            {latestEval.total_score}%
+                                        </div>
+                                        <div>
+                                            <p className="text-gray-300 text-sm mb-1">{latestEval.period_name}</p>
+                                            {latestEval.objection_status && latestEval.objection_status !== 'none' && (
+                                                <div className="flex items-center gap-2 mt-2 text-xs bg-red-500/20 px-2 py-1 rounded text-red-200 w-fit">
+                                                    <MessageSquareWarning size={12}/>
+                                                    حالة الاعتراض: {latestEval.objection_status === 'pending' ? 'قيد المراجعة' : (latestEval.objection_status === 'accepted' ? 'مقبول' : 'مرفوض')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 text-right">
                             <div 
                                 onClick={() => onNavigate('teacher_evaluation')}

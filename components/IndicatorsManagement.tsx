@@ -1,14 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Loader2, List, CheckSquare, AlignLeft, Layers, Users, Scale, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Loader2, List, CheckSquare, AlignLeft, Layers, Users, Scale, AlertTriangle, ArrowLeft, Info, BookOpen } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { EvaluationIndicator, TeacherCategory } from '../types';
+import { EvaluationIndicator, TeacherCategory, UserRole } from '../types';
 
-export default function IndicatorsManagement() {
+interface IndicatorsManagementProps {
+    userRole?: UserRole;
+}
+
+export default function IndicatorsManagement({ userRole }: IndicatorsManagementProps) {
   const [indicators, setIndicators] = useState<EvaluationIndicator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Read-Only Check
+  const isReadOnly = userRole !== UserRole.ADMIN;
 
   // Form State
   const [formData, setFormData] = useState<{
@@ -74,7 +81,8 @@ export default function IndicatorsManagement() {
   }, []);
 
   const handleEdit = (ind: EvaluationIndicator) => {
-    // Flatten rubric descriptions for form
+    // If read-only, we might want to just show details, but for now we reuse the form in "view" mode logic or disable inputs
+    // Or simpler: Reuse the form but hide save buttons if read-only
     const rubricMap: Record<number, string> = {};
     [1, 2, 3, 4, 5].forEach(level => {
         rubricMap[level] = ind.rubric[level]?.description || '';
@@ -97,6 +105,7 @@ export default function IndicatorsManagement() {
   };
 
   const handleAddNew = () => {
+    if (isReadOnly) return;
     setFormData({
       text: '',
       weight: 10,
@@ -113,6 +122,7 @@ export default function IndicatorsManagement() {
   };
 
   const handleDelete = async (id: string): Promise<boolean> => {
+    if (isReadOnly) return false;
     if (!window.confirm('هل أنت متأكد من حذف هذا المؤشر؟ سيتم حذف جميع المعايير المرتبطة بها.')) return false;
 
     try {
@@ -130,6 +140,7 @@ export default function IndicatorsManagement() {
   };
 
   const toggleCategory = (category: TeacherCategory) => {
+    if (isReadOnly) return;
     setFormData(prev => {
         const exists = prev.applicableCategories.includes(category);
         let newCategories;
@@ -147,6 +158,7 @@ export default function IndicatorsManagement() {
   };
 
   const handleCategoryWeightChange = (category: string, value: string) => {
+      if (isReadOnly) return;
       const val = parseFloat(value);
       setFormData(prev => ({
           ...prev,
@@ -158,6 +170,7 @@ export default function IndicatorsManagement() {
   };
 
   const handleSave = async () => {
+    if (isReadOnly) return;
     if (!formData.text) return alert('يرجى إدخال نص المؤشر');
     
     setIsSaving(true);
@@ -168,7 +181,7 @@ export default function IndicatorsManagement() {
           rubricJson[level] = { description: formData.rubric[level] || '', evidence: '' };
       });
 
-      // Prepare Category Weights - ensure only valid numbers and selected categories
+      // Prepare Category Weights
       const cleanWeights: Record<string, number> = {};
       if (formData.applicableCategories && formData.applicableCategories.length > 0) {
           formData.applicableCategories.forEach(cat => {
@@ -238,24 +251,13 @@ export default function IndicatorsManagement() {
     } catch (error: any) {
       console.error('Error saving:', error);
       let msg = 'حدث خطأ غير معروف';
-      
-      // Determine error message safely
       if (error?.message) msg = error.message;
       else if (error?.error_description) msg = error.error_description;
       else if (typeof error === 'object') {
-          try {
-             msg = JSON.stringify(error);
-          } catch(e) { msg = 'خطأ في كائن الخطأ'; }
-      } else {
-          msg = String(error);
-      }
+          try { msg = JSON.stringify(error); } catch(e) { msg = 'خطأ في كائن الخطأ'; }
+      } else { msg = String(error); }
 
-      // Provide helpful hint if likely DB schema issue
-      if (msg.includes('column') || msg.includes('does not exist') || msg.includes('applicable_categories')) {
-          alert('فشل الحفظ: يبدو أن قاعدة البيانات تحتاج إلى تحديث لدعم "الفئات المستهدفة".\n\nيرجى الذهاب إلى صفحة "الإعدادات" ونسخ كود التحديث.');
-      } else {
-          alert(`حدث خطأ أثناء الحفظ:\n${msg}`);
-      }
+      alert(`حدث خطأ أثناء الحفظ:\n${msg}`);
     } finally {
       setIsSaving(false);
     }
@@ -264,36 +266,46 @@ export default function IndicatorsManagement() {
   if (isEditing) {
       return (
           <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col animate-fade-in">
-              {/* Mobile Sticky Header */}
+              {/* Sticky Header */}
               <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10 flex justify-between items-center shadow-sm">
                   <div className="flex items-center gap-2">
                       <button onClick={() => setIsEditing(false)} className="p-2 -mr-2 text-gray-500 hover:bg-gray-100 rounded-full">
                           <ArrowLeft size={20} />
                       </button>
                       <h3 className="font-bold text-lg text-gray-800 truncate max-w-[200px]">
-                          {formData.id ? 'تعديل المؤشر' : 'إضافة مؤشر'}
+                          {isReadOnly ? 'عرض تفاصيل المؤشر' : (formData.id ? 'تعديل المؤشر' : 'إضافة مؤشر')}
                       </h3>
                   </div>
-                  <button 
-                      onClick={handleSave} 
-                      disabled={isSaving}
-                      className="bg-primary-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 flex items-center gap-1"
-                  >
-                      {isSaving ? <Loader2 className="animate-spin" size={16} /> : 'حفظ'}
-                  </button>
+                  {!isReadOnly && (
+                      <button 
+                          onClick={handleSave} 
+                          disabled={isSaving}
+                          className="bg-primary-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 flex items-center gap-1"
+                      >
+                          {isSaving ? <Loader2 className="animate-spin" size={16} /> : 'حفظ'}
+                      </button>
+                  )}
               </div>
               
               <div className="flex-1 overflow-y-auto p-4 pb-24">
                   <div className="max-w-4xl mx-auto space-y-6">
+                      {isReadOnly && (
+                          <div className="bg-blue-50 text-blue-800 p-4 rounded-xl flex items-center gap-3 border border-blue-200">
+                              <Info size={20} className="shrink-0"/>
+                              <p className="text-sm">أنت في وضع القراءة فقط. لا يمكنك تعديل المعايير.</p>
+                          </div>
+                      )}
+
                       {/* Basic Info */}
                       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-4">
                           <div className="md:col-span-8">
                               <label className="block text-sm font-medium text-gray-700 mb-1">نص المؤشر</label>
                               <input 
                                   type="text" 
-                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-600"
                                   value={formData.text}
                                   onChange={e => setFormData({...formData, text: e.target.value})}
+                                  disabled={isReadOnly}
                               />
                           </div>
                           <div className="grid grid-cols-2 gap-4 md:col-span-4">
@@ -301,18 +313,20 @@ export default function IndicatorsManagement() {
                                   <label className="block text-sm font-medium text-gray-700 mb-1">الوزن</label>
                                   <input 
                                       type="number" 
-                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-600"
                                       value={formData.weight}
                                       onChange={e => setFormData({...formData, weight: parseFloat(e.target.value)})}
+                                      disabled={isReadOnly}
                                   />
                               </div>
                               <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">الترتيب</label>
                                   <input 
                                       type="number" 
-                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-600"
                                       value={formData.sort_order}
                                       onChange={e => setFormData({...formData, sort_order: parseInt(e.target.value)})}
+                                      disabled={isReadOnly}
                                   />
                               </div>
                           </div>
@@ -320,9 +334,10 @@ export default function IndicatorsManagement() {
                               <label className="block text-sm font-medium text-gray-700 mb-1">وصف المؤشر</label>
                               <textarea 
                                   rows={2}
-                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-600"
                                   value={formData.description}
                                   onChange={e => setFormData({...formData, description: e.target.value})}
+                                  disabled={isReadOnly}
                               />
                           </div>
                       </div>
@@ -339,11 +354,12 @@ export default function IndicatorsManagement() {
                                     <button 
                                         key={cat}
                                         onClick={() => toggleCategory(cat)}
+                                        disabled={isReadOnly}
                                         className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                                             isSelected 
                                             ? 'bg-blue-600 text-white border-blue-600' 
                                             : 'bg-white text-gray-600 border-gray-300'
-                                        }`}
+                                        } ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
                                     >
                                         {cat}
                                         {isSelected && <span className="mr-1">✓</span>}
@@ -358,9 +374,10 @@ export default function IndicatorsManagement() {
                                           <label className="block text-[10px] text-gray-500 mb-1">وزن {cat}</label>
                                           <input 
                                               type="number"
-                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm disabled:bg-gray-100"
                                               value={formData.categoryWeights[cat] !== undefined ? formData.categoryWeights[cat] : formData.weight}
                                               onChange={(e) => handleCategoryWeightChange(cat, e.target.value)}
+                                              disabled={isReadOnly}
                                           />
                                       </div>
                                   ))}
@@ -375,10 +392,11 @@ export default function IndicatorsManagement() {
                               </label>
                               <textarea 
                                   rows={6}
-                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm"
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm disabled:bg-gray-50 disabled:text-gray-600"
                                   value={formData.criteriaText}
                                   onChange={e => setFormData({...formData, criteriaText: e.target.value})}
-                                  placeholder="كل معيار في سطر جديد"
+                                  placeholder={isReadOnly ? '' : "كل معيار في سطر جديد"}
+                                  disabled={isReadOnly}
                               />
                           </div>
                           <div>
@@ -387,10 +405,11 @@ export default function IndicatorsManagement() {
                               </label>
                               <textarea 
                                   rows={6}
-                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm"
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm disabled:bg-gray-50 disabled:text-gray-600"
                                   value={formData.verificationText}
                                   onChange={e => setFormData({...formData, verificationText: e.target.value})}
-                                  placeholder="كل شاهد في سطر جديد"
+                                  placeholder={isReadOnly ? '' : "كل شاهد في سطر جديد"}
+                                  disabled={isReadOnly}
                               />
                           </div>
                       </div>
@@ -410,20 +429,21 @@ export default function IndicatorsManagement() {
                                       </div>
                                       <textarea 
                                           rows={2}
-                                          className="flex-1 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                          className="flex-1 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100 disabled:text-gray-600"
                                           placeholder={`وصف المستوى ${level}`}
                                           value={formData.rubric[level]}
                                           onChange={e => setFormData({
                                               ...formData, 
                                               rubric: { ...formData.rubric, [level]: e.target.value } 
                                           })}
+                                          disabled={isReadOnly}
                                       />
                                   </div>
                               ))}
                           </div>
                       </div>
 
-                      {formData.id && (
+                      {!isReadOnly && formData.id && (
                           <div className="pt-4">
                               <button 
                                   onClick={async () => {
@@ -447,15 +467,17 @@ export default function IndicatorsManagement() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <AlignLeft className="text-primary-600" />
-          إدارة المؤشرات
+          {isReadOnly ? 'دليل المؤشرات' : 'إدارة المؤشرات'}
         </h2>
-        <button 
-          onClick={handleAddNew}
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm text-sm font-bold"
-        >
-          <Plus size={18} />
-          إضافة
-        </button>
+        {!isReadOnly && (
+            <button 
+            onClick={handleAddNew}
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm text-sm font-bold"
+            >
+            <Plus size={18} />
+            إضافة
+            </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -495,8 +517,12 @@ export default function IndicatorsManagement() {
                     </div>
                     
                     <div className="flex flex-col gap-2">
-                        <button onClick={() => handleEdit(ind)} className="p-2 text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg">
-                            <Edit2 size={18} />
+                        <button 
+                            onClick={() => handleEdit(ind)} 
+                            className={`p-2 rounded-lg ${isReadOnly ? 'text-primary-600 bg-primary-50 hover:bg-primary-100' : 'text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50'}`}
+                            title={isReadOnly ? "عرض التفاصيل" : "تعديل"}
+                        >
+                            {isReadOnly ? <BookOpen size={18} /> : <Edit2 size={18} />}
                         </button>
                     </div>
                 </div>

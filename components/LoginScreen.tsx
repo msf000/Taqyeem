@@ -175,6 +175,35 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       onLogin(userData);
   };
 
+  const handleDemoLogin = (role: UserRole) => {
+      // Pre-defined demo users for quick access
+      let userData: User = {
+          id: '1',
+          name: 'مستخدم تجريبي',
+          role: role
+      };
+      
+      switch (role) {
+          case UserRole.ADMIN: 
+              userData.name = 'عبدالله المدير'; 
+              break;
+          case UserRole.PRINCIPAL: 
+              userData.name = 'أحمد العتيبي'; 
+              userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; 
+              userData.schoolName = 'مدرسة التجربة'; 
+              break;
+          case UserRole.TEACHER: 
+              userData.name = 'سعيد الشهراني'; 
+              break;
+          case UserRole.EVALUATOR: 
+              userData.name = 'خالد المشرف'; 
+              userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Link to demo school
+              userData.schoolName = 'مدرسة التجربة';
+              break;
+      }
+      onLogin(userData);
+  };
+
   if (isRegistering) {
       return <RegisterScreen onLogin={onLogin} onBack={() => setIsRegistering(false)} />;
   }

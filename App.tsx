@@ -249,11 +249,12 @@ export default function App() {
             name: 'مستخدم تجريبي',
             role: role
         };
+        // NOTE: Demo data is actually handled in LoginScreen.tsx, this is just a fallback for direct calls
         switch (role) {
             case UserRole.ADMIN: userData.name = 'عبدالله المدير'; break;
             case UserRole.PRINCIPAL: userData.name = 'أحمد العتيبي'; userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; userData.schoolName = 'مدرسة التجربة'; break;
             case UserRole.TEACHER: userData.name = 'سعيد الشهراني'; break;
-            case UserRole.EVALUATOR: userData.name = 'خالد المشرف'; break;
+            case UserRole.EVALUATOR: userData.name = 'خالد المشرف'; userData.schoolId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; break;
         }
     }
     setCurrentUser(userData);
@@ -337,6 +338,7 @@ export default function App() {
           nationalId={currentUser?.nationalId} // Added nationalId
           onNavigate={(tab) => setActiveTab(tab)} 
           onImportClick={() => { setActiveTab(Tab.TEACHERS); }}
+          onEvaluate={(teacherId) => navigateToEvaluate(teacherId)} // Pass evaluate function
         />;
       case Tab.SCHOOLS:
         return <SchoolManagement 
@@ -361,7 +363,7 @@ export default function App() {
             nationalId={currentUser?.nationalId} // ADDED nationalId for Analytics robustness
         />;
       case Tab.INDICATORS:
-        return <IndicatorsManagement />;
+        return <IndicatorsManagement userRole={currentUser?.role} />; // Pass Role
       case Tab.SETTINGS:
         return <SystemSettings />;
       case Tab.EVENTS:
@@ -389,6 +391,7 @@ export default function App() {
             nationalId={currentUser?.nationalId}
             onNavigate={(tab) => setActiveTab(tab)} 
             onImportClick={() => {}} 
+            onEvaluate={(teacherId) => navigateToEvaluate(teacherId)}
         />;
     }
   };
@@ -477,14 +480,16 @@ export default function App() {
                    <NavItem tab={Tab.OBJECTIONS} icon={MessageSquareWarning} label="الاعتراضات" />
                 )}
                 
-                {currentUser.role === UserRole.ADMIN && (
-                  <>
+                {/* Allow ADMIN, PRINCIPAL, EVALUATOR to see Indicators */}
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL || currentUser.role === UserRole.EVALUATOR) && (
                     <NavItem tab={Tab.INDICATORS} icon={AlignLeft} label="المؤشرات" />
-                    <NavItem tab={Tab.SETTINGS} icon={Settings} label="الإعدادات" />
-                  </>
                 )}
 
-                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                {currentUser.role === UserRole.ADMIN && (
+                    <NavItem tab={Tab.SETTINGS} icon={Settings} label="الإعدادات" />
+                )}
+
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL || currentUser.role === UserRole.EVALUATOR) && (
                     <NavItem tab={Tab.ANALYTICS} icon={BarChart3} label="التحليلات" />
                 )}
               </nav>
@@ -604,6 +609,9 @@ export default function App() {
 
               {currentUser.role === UserRole.TEACHER ? (
                   <MobileNavItem tab={Tab.TEACHER_EVALUATION} icon={FileText} label="تقييمي" />
+              ) : currentUser.role === UserRole.EVALUATOR ? (
+                  // Evaluator needs Indicators instead of Analytics as primary
+                  <MobileNavItem tab={Tab.INDICATORS} icon={AlignLeft} label="المؤشرات" />
               ) : (
                   <MobileNavItem tab={Tab.ANALYTICS} icon={BarChart3} label="التقارير" />
               )}
@@ -615,6 +623,9 @@ export default function App() {
                   <MobileNavItem tab={Tab.OBJECTIONS} icon={MessageSquareWarning} label="الاعتراضات" />
               ) : currentUser.role === UserRole.TEACHER ? (
                   <MobileNavItem tab={Tab.TEACHER_PROFILE} icon={UserCheck} label="ملفي" />
+              ) : currentUser.role === UserRole.EVALUATOR ? (
+                  // Show Analytics as the last item for Evaluator
+                  <MobileNavItem tab={Tab.ANALYTICS} icon={BarChart3} label="التقارير" />
               ) : null}
           </div>
       </nav>
