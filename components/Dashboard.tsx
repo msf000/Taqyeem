@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole } from '../types';
 
@@ -54,7 +54,9 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
     subscriptions: 0,
     objections: 0
   });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Teacher Specific State
   const [teacherProfile, setTeacherProfile] = useState<{
@@ -62,91 +64,108 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
       schoolName: string;
   } | null>(null);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-        try {
-            if (userRole === UserRole.TEACHER && userId) {
-                // Fetch Teacher Details for dashboard
-                const { data: teacherData } = await supabase
-                    .from('teachers')
-                    .select('specialty, schools(name)')
-                    .eq('id', userId)
-                    .single();
+  const fetchStats = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+        if (userRole === UserRole.TEACHER && userId) {
+            // Fetch Teacher Details for dashboard
+            const { data: teacherData, error } = await supabase
+                .from('teachers')
+                .select('specialty, schools(name)')
+                .eq('id', userId)
+                .single();
+            
+            if (error) throw error;
+
+            if (teacherData) {
+                const schoolsData: any = teacherData.schools;
+                const schoolName = Array.isArray(schoolsData) 
+                    ? schoolsData[0]?.name 
+                    : schoolsData?.name;
+
+                setTeacherProfile({
+                    specialty: teacherData.specialty || 'غير محدد',
+                    schoolName: schoolName || 'غير محدد'
+                });
+            }
+        } else {
+            // Normal Admin/Principal Stats
+            
+            // Schools count
+            const { count: schoolsCount } = await supabase.from('schools').select('*', { count: 'exact', head: true });
+
+            // Teachers count
+            let teachersQuery = supabase.from('teachers').select('*', { count: 'exact', head: true });
+            if (userRole === UserRole.PRINCIPAL && schoolId) {
+                teachersQuery = teachersQuery.eq('school_id', schoolId);
+            }
+            const { count: teachersCount } = await teachersQuery;
+
+            // Evaluations count
+            let evalsCount = 0;
+            let completedCount = 0;
+            let objectionsCount = 0;
+
+            if (userRole === UserRole.PRINCIPAL && schoolId) {
+                // Logic for Principal
+                const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', schoolId);
+                const teacherIds = schoolTeachers?.map(t => t.id) || [];
                 
-                if (teacherData) {
-                    const schoolsData: any = teacherData.schools;
-                    // Handle case where relation returns array or object
-                    const schoolName = Array.isArray(schoolsData) 
-                        ? schoolsData[0]?.name 
-                        : schoolsData?.name;
-
-                    setTeacherProfile({
-                        specialty: teacherData.specialty || 'غير محدد',
-                        schoolName: schoolName || 'غير محدد'
-                    });
-                }
-            } else {
-                // Normal Admin/Principal Stats
-                
-                // Schools count
-                const { count: schoolsCount } = await supabase.from('schools').select('*', { count: 'exact', head: true });
-
-                // Teachers count
-                let teachersQuery = supabase.from('teachers').select('*', { count: 'exact', head: true });
-                if (userRole === UserRole.PRINCIPAL && schoolId) {
-                    teachersQuery = teachersQuery.eq('school_id', schoolId);
-                }
-                const { count: teachersCount } = await teachersQuery;
-
-                // Evaluations count
-                let evalsCount = 0;
-                let completedCount = 0;
-                let objectionsCount = 0;
-
-                if (userRole === UserRole.PRINCIPAL && schoolId) {
-                    // Logic for Principal
-                    const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', schoolId);
-                    const teacherIds = schoolTeachers?.map(t => t.id) || [];
+                if (teacherIds.length > 0) {
+                    const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
+                    const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
+                    // Count Pending Objections
+                    const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
                     
-                    if (teacherIds.length > 0) {
-                        const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
-                        const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
-                        // Count Pending Objections
-                        const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
-                        
-                        evalsCount = ec || 0;
-                        completedCount = cc || 0;
-                        objectionsCount = oc || 0;
-                    }
-                } else if (userRole === UserRole.ADMIN) {
-                    const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true });
-                    const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('status', 'completed');
-                    const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('objection_status', 'pending');
                     evalsCount = ec || 0;
                     completedCount = cc || 0;
                     objectionsCount = oc || 0;
+
+                    // Fetch Recent Activity for Principal
+                    const { data: recent } = await supabase
+                        .from('evaluations')
+                        .select('id, teacher_id, total_score, created_at, status, teachers(name)')
+                        .in('teacher_id', teacherIds)
+                        .order('created_at', { ascending: false })
+                        .limit(3);
+                    setRecentActivity(recent || []);
+
+                } else {
+                    setRecentActivity([]);
                 }
-
-                // New stats for Admin
-                const { count: usersCount } = await supabase.from('app_users').select('*', { count: 'exact', head: true });
-                const { count: subsCount } = await supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active');
-
-                setStats({
-                    schools: schoolsCount || 0,
-                    teachers: teachersCount || 0,
-                    evaluations: evalsCount || 0,
-                    completedEvals: completedCount || 0,
-                    users: usersCount || 0,
-                    subscriptions: subsCount || 0,
-                    objections: objectionsCount || 0
-                });
+            } else if (userRole === UserRole.ADMIN) {
+                const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true });
+                const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+                const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).eq('objection_status', 'pending');
+                evalsCount = ec || 0;
+                completedCount = cc || 0;
+                objectionsCount = oc || 0;
             }
-        } catch (error: any) {
-            console.error('Error fetching dashboard stats:', error.message || error);
-        } finally {
-            setLoading(false);
+
+            // New stats for Admin
+            const { count: usersCount } = await supabase.from('app_users').select('*', { count: 'exact', head: true });
+            const { count: subsCount } = await supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active');
+
+            setStats({
+                schools: schoolsCount || 0,
+                teachers: teachersCount || 0,
+                evaluations: evalsCount || 0,
+                completedEvals: completedCount || 0,
+                users: usersCount || 0,
+                subscriptions: subsCount || 0,
+                objections: objectionsCount || 0
+            });
         }
-    };
+    } catch (error: any) {
+        console.error('Error fetching dashboard stats:', error.message || error);
+        setError('تعذر تحميل البيانات. يرجى التحقق من الاتصال.');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchStats();
   }, [userRole, schoolId, userId]);
 
@@ -168,6 +187,18 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                  <p className="text-secondary-500 font-medium">جاري تحميل البيانات...</p>
             </div>
         );
+      }
+
+      if (error) {
+          return (
+            <div className="flex flex-col items-center justify-center p-12 min-h-[300px] text-center">
+                <XCircle className="text-red-500 mb-4" size={40} />
+                <p className="text-secondary-700 font-bold mb-2">{error}</p>
+                <button onClick={fetchStats} className="flex items-center gap-2 text-primary-600 hover:text-primary-800 bg-primary-50 px-4 py-2 rounded-lg transition-colors">
+                    <RefreshCw size={16} /> إعادة المحاولة
+                </button>
+            </div>
+          );
       }
 
       switch (userRole) {
@@ -243,23 +274,73 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Progress Section */}
                         <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-2xl border border-secondary-100 shadow-card">
-                            <h3 className="font-bold text-lg md:text-xl text-secondary-800 mb-6">حالة التقييم في المدرسة</h3>
+                            <h3 className="font-bold text-lg md:text-xl text-secondary-800 mb-6 flex items-center gap-2">
+                                <FileBarChart size={20} className="text-primary-600"/>
+                                حالة التقييم في المدرسة
+                            </h3>
                             <div className="flex items-center gap-4 md:gap-6">
-                                <div className="flex-1 bg-secondary-100 rounded-full h-4 md:h-5 overflow-hidden shadow-inner">
+                                <div className="flex-1 bg-secondary-100 rounded-full h-4 md:h-5 overflow-hidden shadow-inner relative">
                                     <div 
-                                        className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all duration-1000 rounded-full" 
+                                        className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all duration-1000 rounded-full relative" 
                                         style={{ width: `${stats.teachers > 0 ? (stats.completedEvals / stats.teachers) * 100 : 0}%` }}
-                                    ></div>
+                                    >
+                                        <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                                    </div>
                                 </div>
-                                <span className="font-bold text-xl md:text-2xl text-secondary-700">
+                                <span className="font-bold text-xl md:text-2xl text-secondary-700 w-16 text-left">
                                     {stats.teachers > 0 ? Math.round((stats.completedEvals / stats.teachers) * 100) : 0}%
                                 </span>
                             </div>
-                            <p className="text-sm text-secondary-500 mt-4 flex items-center gap-2">
-                                <CheckCircle2 size={16} className="text-green-500"/>
-                                تم تقييم <strong className="text-secondary-800">{stats.completedEvals}</strong> من أصل <strong className="text-secondary-800">{stats.teachers}</strong> معلم
-                            </p>
+                            <div className="flex justify-between items-center mt-4 text-sm">
+                                <p className="text-secondary-500 flex items-center gap-2">
+                                    <CheckCircle2 size={16} className="text-green-500"/>
+                                    تم تقييم <strong className="text-secondary-800">{stats.completedEvals}</strong> من أصل <strong className="text-secondary-800">{stats.teachers}</strong>
+                                </p>
+                                <p className="text-secondary-400">
+                                    المتبقي: <strong className="text-secondary-600">{Math.max(0, stats.teachers - stats.completedEvals)}</strong>
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Recent Activity Section */}
+                        <div className="bg-white p-6 rounded-2xl border border-secondary-100 shadow-card">
+                            <h3 className="font-bold text-lg text-secondary-800 mb-4 flex items-center gap-2">
+                                <Calendar size={18} className="text-blue-500"/>
+                                آخر العمليات
+                            </h3>
+                            {recentActivity.length > 0 ? (
+                                <div className="space-y-4">
+                                    {recentActivity.map((act) => (
+                                        <div key={act.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                                            <div className="mt-1">
+                                                {act.status === 'completed' 
+                                                    ? <CheckCircle2 size={16} className="text-green-500"/>
+                                                    : <Loader2 size={16} className="text-yellow-500"/>
+                                                }
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-gray-800">
+                                                    {(act.teachers as any)?.name || 'معلم غير معروف'}
+                                                </p>
+                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                                                    <span>{act.total_score}%</span>
+                                                    <span>•</span>
+                                                    <span>{new Date(act.created_at).toLocaleDateString('ar-SA')}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button onClick={() => onNavigate('teachers')} className="text-xs text-primary-600 hover:text-primary-800 block text-center w-full mt-2 font-medium">
+                                        عرض الكل
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-gray-400 text-sm">
+                                    <p>لا توجد نشاطات حديثة</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -355,19 +436,29 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
       {/* Hero Header */}
       <div className="bg-gradient-to-br from-secondary-900 via-secondary-800 to-secondary-900 rounded-3xl p-6 md:p-10 text-white shadow-2xl relative overflow-hidden">
         <div className="relative z-10">
-            <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 mb-2 md:mb-6">
-                <div className="w-16 h-16 md:w-20 md:h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-bold shadow-inner border border-white/10">
-                    {userName.charAt(0)}
-                </div>
-                <div>
-                    <h1 className="text-2xl md:text-4xl font-bold mb-2 md:mb-3 tracking-tight">مرحباً، {userName}</h1>
-                    <div className="flex flex-wrap items-center gap-2 md:gap-3 text-secondary-300">
-                        {getRoleBadge()}
-                        <span className="text-xs md:text-sm border-r border-white/20 pr-3 mr-1 md:mr-3 font-medium">
-                            {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                        </span>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+                    <div className="w-16 h-16 md:w-20 md:h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-bold shadow-inner border border-white/10">
+                        {userName.charAt(0)}
+                    </div>
+                    <div>
+                        <h1 className="text-2xl md:text-4xl font-bold mb-2 md:mb-3 tracking-tight">مرحباً، {userName}</h1>
+                        <div className="flex flex-wrap items-center gap-2 md:gap-3 text-secondary-300">
+                            {getRoleBadge()}
+                            <span className="text-xs md:text-sm border-r border-white/20 pr-3 mr-1 md:mr-3 font-medium">
+                                {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </span>
+                        </div>
                     </div>
                 </div>
+                
+                <button 
+                    onClick={fetchStats} 
+                    className="p-3 bg-white/10 hover:bg-white/20 rounded-xl backdrop-blur-md transition-colors border border-white/10 group"
+                    title="تحديث البيانات"
+                >
+                    <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-500"/>
+                </button>
             </div>
         </div>
         
