@@ -7,6 +7,7 @@ import { UserRole } from '../types';
 interface ObjectionsManagementProps {
   schoolId?: string;
   userRole?: UserRole;
+  nationalId?: string;
 }
 
 interface ObjectionItem {
@@ -21,19 +22,51 @@ interface ObjectionItem {
     objection_status: 'pending' | 'accepted' | 'rejected' | 'none';
 }
 
-export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsManagementProps) {
+export default function ObjectionsManagement({ schoolId, userRole, nationalId }: ObjectionsManagementProps) {
   const [objections, setObjections] = useState<ObjectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'pending' | 'history'>('pending');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Effective School ID State
+  const [effectiveSchoolId, setEffectiveSchoolId] = useState<string | undefined>(schoolId);
+
+  // 1. Resolve Effective School ID for Principals
+  useEffect(() => {
+      const resolveSchool = async () => {
+          // If we already have a direct schoolId from login, use it
+          if (schoolId) {
+              setEffectiveSchoolId(schoolId);
+              return;
+          }
+
+          // If Principal and no schoolId, try resolving via National ID
+          if (userRole === UserRole.PRINCIPAL && nationalId) {
+              try {
+                  const { data } = await supabase
+                      .from('schools')
+                      .select('id')
+                      .eq('manager_national_id', nationalId)
+                      .single();
+                  
+                  if (data) {
+                      setEffectiveSchoolId(data.id);
+                  }
+              } catch (e) {
+                  console.error("Error resolving school for objections:", e);
+              }
+          }
+      };
+      resolveSchool();
+  }, [schoolId, nationalId, userRole]);
 
   const fetchObjections = async () => {
       setIsLoading(true);
       try {
           // Get IDs of teachers in this school
           let teacherIds: string[] = [];
-          if (schoolId) {
-              const { data: teachers } = await supabase.from('teachers').select('id').eq('school_id', schoolId);
+          if (effectiveSchoolId) {
+              const { data: teachers } = await supabase.from('teachers').select('id').eq('school_id', effectiveSchoolId);
               teacherIds = teachers?.map(t => t.id) || [];
           } else if (userRole === UserRole.ADMIN) {
               // Admin fetches all, no filter needed yet, but we'll fetch teachers to map names
@@ -45,14 +78,16 @@ export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsM
               .neq('objection_status', 'none') // Only where objection exists
               .order('created_at', { ascending: false });
 
-          // Filter for Principal
-          if (schoolId && teacherIds.length > 0) {
-              query = query.in('teacher_id', teacherIds);
-          } else if (schoolId && teacherIds.length === 0) {
-              // School has no teachers
-              setObjections([]);
-              setIsLoading(false);
-              return;
+          // Filter for Principal: only show objections from their school's teachers
+          if (userRole === UserRole.PRINCIPAL) {
+              if (effectiveSchoolId && teacherIds.length > 0) {
+                  query = query.in('teacher_id', teacherIds);
+              } else {
+                  // School has no teachers or school not found
+                  setObjections([]);
+                  setIsLoading(false);
+                  return;
+              }
           }
 
           const { data, error } = await query;
@@ -82,7 +117,7 @@ export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsM
 
   useEffect(() => {
       fetchObjections();
-  }, [schoolId, userRole]);
+  }, [effectiveSchoolId, userRole]);
 
   const handleAction = async (id: string, action: 'accepted' | 'rejected') => {
       if (!confirm(action === 'accepted' ? 'هل أنت متأكد من قبول الاعتراض؟' : 'هل أنت متأكد من رفض الاعتراض؟')) return;
@@ -144,11 +179,12 @@ export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsM
               <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
                   <MessageSquareWarning size={48} className="mx-auto mb-4 text-gray-300" />
                   <p>لا توجد اعتراضات {filterStatus === 'pending' ? 'معلقة حالياً' : 'في الأرشيف'}.</p>
+                  <button onClick={fetchObjections} className="text-primary-600 text-sm mt-4 hover:underline">تحديث القائمة</button>
               </div>
           ) : (
               <div className="grid gap-4">
                   {filteredObjections.map((obj) => (
-                      <div key={obj.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                      <div key={obj.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                           <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4 border-b border-gray-100 pb-4">
                               <div>
                                   <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
@@ -157,7 +193,7 @@ export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsM
                                   <p className="text-sm text-gray-500 font-mono mt-1">الهوية: {obj.teacher_national_id}</p>
                               </div>
                               <div className="text-left flex flex-col items-end">
-                                  <span className="bg-blue-50 text-blue-800 text-xs px-2 py-1 rounded mb-1">{obj.period_name}</span>
+                                  <span className="bg-blue-50 text-blue-800 text-xs px-2 py-1 rounded mb-1 border border-blue-100">{obj.period_name}</span>
                                   <div className="flex items-center gap-2 text-sm text-gray-600">
                                       <Calendar size={14}/> {new Date(obj.eval_date).toLocaleDateString('ar-SA')}
                                   </div>
@@ -167,36 +203,36 @@ export default function ObjectionsManagement({ schoolId, userRole }: ObjectionsM
 
                           <div className="bg-red-50 p-4 rounded-lg border border-red-100 text-gray-800 text-sm mb-4">
                               <h4 className="font-bold text-red-800 mb-2 flex items-center gap-2"><FileText size={16}/> نص الاعتراض:</h4>
-                              <p className="leading-relaxed">{obj.objection_text}</p>
+                              <p className="leading-relaxed whitespace-pre-line">{obj.objection_text}</p>
                           </div>
 
                           {obj.objection_status === 'pending' ? (
-                              <div className="flex justify-end gap-3">
+                              <div className="flex justify-end gap-3 pt-2">
                                   <button 
                                       onClick={() => handleAction(obj.id, 'rejected')}
                                       disabled={processingId === obj.id}
-                                      className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+                                      className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition-colors"
                                   >
                                       <XCircle size={16} /> رفض الاعتراض
                                   </button>
                                   <button 
                                       onClick={() => handleAction(obj.id, 'accepted')}
                                       disabled={processingId === obj.id}
-                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm"
                                   >
                                       {processingId === obj.id ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle size={16} />}
                                       قبول الاعتراض
                                   </button>
                               </div>
                           ) : (
-                              <div className="flex justify-end">
+                              <div className="flex justify-end pt-2">
                                   {obj.objection_status === 'accepted' && (
-                                      <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-2">
+                                      <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 border border-green-200">
                                           <CheckCircle size={16}/> تم قبول الاعتراض
                                       </span>
                                   )}
                                   {obj.objection_status === 'rejected' && (
-                                      <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-2">
+                                      <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 border border-red-200">
                                           <XCircle size={16}/> تم رفض الاعتراض
                                       </span>
                                   )}

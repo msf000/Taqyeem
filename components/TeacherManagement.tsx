@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown, Phone, Briefcase, ChevronDown, List } from 'lucide-react';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown, Phone, Briefcase, ChevronDown, List, RefreshCw } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 import readXlsxFile from 'read-excel-file';
@@ -11,10 +11,11 @@ interface TeacherManagementProps {
   userRole?: UserRole;
   schoolId?: string;
   userName?: string;
+  nationalId?: string; // Add nationalId prop
   onViewHistory?: (teacherId: string) => void;
 }
 
-export default function TeacherManagement({ onEvaluate, userRole, schoolId, userName, onViewHistory }: TeacherManagementProps) {
+export default function TeacherManagement({ onEvaluate, userRole, schoolId, userName, nationalId, onViewHistory }: TeacherManagementProps) {
   const [viewMode, setViewMode] = useState<'list' | 'import'>('list'); // Replaces subTab for main views
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]); 
@@ -87,17 +88,21 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         // 1. Fetch Schools
         let schoolsQuery = supabase.from('schools').select('*').order('name');
         
-        // Priority: SchoolID (Session) > ManagerName (Fallback)
+        // Priority: SchoolID (Session) > National ID (Robust Fallback) > ManagerName (Legacy Fallback)
         if (userRole === UserRole.PRINCIPAL) {
-             if (schoolId) {
-                 // Primary: Use active session school ID
-                 schoolsQuery = schoolsQuery.eq('id', schoolId);
-             } else if (userName) {
-                 // Fallback: Use name matching if schoolId is missing (rare)
-                 schoolsQuery = schoolsQuery.eq('manager_name', userName);
+             const conditions = [];
+             
+             if (schoolId) conditions.push(`id.eq.${schoolId}`);
+             if (nationalId) conditions.push(`manager_national_id.eq.${nationalId}`);
+             if (userName && !schoolId && !nationalId) conditions.push(`manager_name.eq.${userName}`);
+
+             if (conditions.length > 0) {
+                 schoolsQuery = schoolsQuery.or(conditions.join(','));
+             } else {
+                 // No valid ID found for Principal, return empty (prevents showing all schools)
+                 schoolsQuery = schoolsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
              }
         } else if (userRole === UserRole.EVALUATOR && schoolId) {
-             // Fallback or specific restriction
              schoolsQuery = schoolsQuery.eq('id', schoolId);
         }
 
@@ -189,7 +194,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
   useEffect(() => {
     fetchData();
-  }, [userRole, schoolId, userName]);
+  }, [userRole, schoolId, userName, nationalId]);
 
   const handleOpenAddTeacher = () => {
       setNewTeacher({ category: TeacherCategory.TEACHER });
@@ -572,7 +577,9 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 <div className="bg-red-50 text-red-700 p-4 border-b border-red-100 flex items-center gap-2">
                     <XCircle size={20} />
                     <span>{errorMessage}</span>
-                    <button onClick={fetchData} className="mr-auto underline text-sm">إعادة المحاولة</button>
+                    <button onClick={fetchData} className="mr-auto underline text-sm flex items-center gap-1 font-bold">
+                        <RefreshCw size={14}/> إعادة المحاولة
+                    </button>
                 </div>
             )}
 
@@ -622,9 +629,21 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 {isLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary-600" size={30} /></div>
                 ) : sortedTeachers.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500 flex flex-col items-center justify-center gap-2">
-                        <Search size={32} className="text-gray-300" />
-                        <p>لا توجد نتائج مطابقة.</p>
+                    <div className="text-center py-12 text-gray-500 flex flex-col items-center justify-center gap-4">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
+                            <Search size={32} />
+                        </div>
+                        {schools.length === 0 && userRole === UserRole.PRINCIPAL ? (
+                            <div className="max-w-sm">
+                                <p className="font-bold text-gray-700 mb-1">لا توجد مدرسة مرتبطة بحسابك</p>
+                                <p className="text-sm text-gray-500">يرجى التأكد من ربط رقم الهوية الخاص بك بالمدرسة في صفحة "المدارس"، أو إضافة مدرسة جديدة.</p>
+                            </div>
+                        ) : (
+                            <div className="max-w-sm">
+                                <p className="font-bold text-gray-700">لا توجد نتائج</p>
+                                <p className="text-sm text-gray-500">لم يتم العثور على معلمين يطابقون بحثك. جرب تغيير الفلتر أو إضافة معلم جديد.</p>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <>

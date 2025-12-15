@@ -334,6 +334,7 @@ export default function App() {
           userName={currentUser?.name || ''} 
           userRole={currentUser?.role || UserRole.TEACHER}
           schoolId={currentUser?.schoolId}
+          nationalId={currentUser?.nationalId} // Added nationalId
           onNavigate={(tab) => setActiveTab(tab)} 
           onImportClick={() => { setActiveTab(Tab.TEACHERS); }}
         />;
@@ -351,9 +352,14 @@ export default function App() {
             userRole={currentUser?.role}
             schoolId={currentUser?.schoolId}
             userName={currentUser?.name}
+            nationalId={currentUser?.nationalId} // ADDED nationalId
         />;
       case Tab.ANALYTICS:
-        return <Analytics userRole={currentUser?.role} schoolId={currentUser?.schoolId} />;
+        return <Analytics 
+            userRole={currentUser?.role} 
+            schoolId={currentUser?.schoolId} 
+            nationalId={currentUser?.nationalId} // ADDED nationalId for Analytics robustness
+        />;
       case Tab.INDICATORS:
         return <IndicatorsManagement />;
       case Tab.SETTINGS:
@@ -362,9 +368,14 @@ export default function App() {
         return <EventsManagement 
             schoolId={currentUser?.schoolId} 
             userRole={currentUser?.role}
+            nationalId={currentUser?.nationalId} // ADDED nationalId
         />;
       case Tab.OBJECTIONS:
-        return <ObjectionsManagement schoolId={currentUser?.schoolId} userRole={currentUser?.role} />;
+        return <ObjectionsManagement 
+            schoolId={currentUser?.schoolId} 
+            userRole={currentUser?.role}
+            nationalId={currentUser?.nationalId} // ADDED nationalId
+        />;
       case Tab.TEACHER_EVALUATION:
          return <TeacherEvaluationDetails teacherId={currentUser?.id || ''} onBack={() => setActiveTab(Tab.DASHBOARD)} />;
       case Tab.TEACHER_PROFILE:
@@ -375,6 +386,7 @@ export default function App() {
             userName={currentUser?.name || ''} 
             userRole={currentUser?.role || UserRole.TEACHER} 
             schoolId={currentUser?.schoolId}
+            nationalId={currentUser?.nationalId}
             onNavigate={(tab) => setActiveTab(tab)} 
             onImportClick={() => {}} 
         />;

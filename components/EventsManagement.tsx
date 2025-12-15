@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Edit2, Trash2, X, Loader2, CheckCircle2, Clock, AlertCircle, Database, School as SchoolIcon, MoreHorizontal } from 'lucide-react';
+import { Calendar, Plus, Edit2, Trash2, X, Loader2, CheckCircle2, Clock, AlertCircle, Database, School as SchoolIcon, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { SchoolEvent, UserRole, School } from '../types';
 
 interface EventsManagementProps {
     userRole?: UserRole;
     schoolId?: string;
+    nationalId?: string;
 }
 
-export default function EventsManagement({ userRole, schoolId }: EventsManagementProps) {
+export default function EventsManagement({ userRole, schoolId, nationalId }: EventsManagementProps) {
   const [events, setEvents] = useState<SchoolEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -17,6 +18,9 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   
+  // Effective School ID State
+  const [effectiveSchoolId, setEffectiveSchoolId] = useState<string | undefined>(schoolId);
+
   // Mobile Action Menu
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -46,6 +50,37 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
     }
   };
 
+  // 1. Resolve Effective School ID for Principals
+  useEffect(() => {
+      const resolveSchool = async () => {
+          // If we already have a direct schoolId from login, use it
+          if (schoolId) {
+              setEffectiveSchoolId(schoolId);
+              return;
+          }
+
+          // If Principal and no schoolId, try resolving via National ID
+          if (userRole === UserRole.PRINCIPAL && nationalId) {
+              try {
+                  const { data } = await supabase
+                      .from('schools')
+                      .select('id')
+                      .eq('manager_national_id', nationalId)
+                      .single();
+                  
+                  if (data) {
+                      setEffectiveSchoolId(data.id);
+                  }
+              } catch (e) {
+                  console.error("Error resolving school for events:", e);
+              }
+          }
+      };
+      
+      resolveSchool();
+  }, [schoolId, nationalId, userRole]);
+
+  // 2. Fetch Admin Schools List
   const fetchAdminSchools = async () => {
       if (userRole !== UserRole.ADMIN) return;
       const { data } = await supabase.from('schools').select('*').order('name');
@@ -54,16 +89,16 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
       })));
   };
 
+  // 3. Fetch Events
   const fetchEvents = async () => {
-      // Determine effective school ID
-      let targetSchoolId = schoolId;
+      let targetSchoolId = effectiveSchoolId;
+      
       if (userRole === UserRole.ADMIN) {
           targetSchoolId = selectedAdminSchoolId;
       }
 
-      // If Admin hasn't selected a school, don't fetch or fetch all (optional logic)
-      // Here we choose to show empty if no school selected for Admin to avoid clutter
-      if (userRole === UserRole.ADMIN && !targetSchoolId) {
+      // If Principal/Admin hasn't identified a school yet
+      if ((userRole === UserRole.PRINCIPAL && !targetSchoolId) || (userRole === UserRole.ADMIN && !targetSchoolId)) {
           setEvents([]);
           setIsLoading(false);
           return;
@@ -76,8 +111,6 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
           
           if (targetSchoolId) {
               query = query.eq('school_id', targetSchoolId);
-          } else {
-              // Fallback for global events if needed
           }
 
           const { data, error } = await query;
@@ -105,7 +138,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
 
   useEffect(() => {
       fetchEvents();
-  }, [schoolId, userRole, selectedAdminSchoolId]);
+  }, [effectiveSchoolId, userRole, selectedAdminSchoolId]);
 
   const handleOpenModal = (event?: SchoolEvent) => {
       if (event) {
@@ -134,7 +167,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
   };
 
   const handleSave = async () => {
-      let targetSchoolId = schoolId;
+      let targetSchoolId = effectiveSchoolId;
       if (userRole === UserRole.ADMIN) {
           targetSchoolId = selectedAdminSchoolId;
       }
@@ -167,12 +200,11 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
               if (error) throw error;
 
               // 2. Auto-create evaluations if type is 'evaluation'
-              // IMPORTANT: Filter teachers by School ID
               if (formData.type === 'evaluation') {
                   const { data: teachers } = await supabase
                     .from('teachers')
                     .select('id, school_id')
-                    .eq('school_id', targetSchoolId); // Filter by school
+                    .eq('school_id', targetSchoolId); 
 
                   if (teachers && teachers.length > 0) {
                       const evaluationsPayload = teachers.map(t => ({
@@ -187,12 +219,12 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                       
                       const { error: batchError } = await supabase.from('evaluations').insert(evaluationsPayload);
                       if (batchError) {
-                          console.warn('Auto-creation of evaluations had partial failure or constraint issue:', batchError);
+                          console.warn('Auto-creation warning:', batchError);
                       } else {
-                          alert(`تم إنشاء الحدث لمدرسة ${userRole === UserRole.ADMIN ? adminSchoolList.find(s=>s.id===targetSchoolId)?.name : ''}، وتم إضافة ${teachers.length} سجل تقييم (مسودة) للمعلمين تلقائياً.`);
+                          alert(`تم إنشاء الحدث وإضافة ${teachers.length} سجل تقييم تلقائياً.`);
                       }
                   } else {
-                      alert('تم إنشاء الحدث، ولكن لا يوجد معلمين في هذه المدرسة لإنشاء سجلات تقييم لهم.');
+                      alert('تم إنشاء الحدث، ولكن لا يوجد معلمين لإنشاء سجلات تقييم لهم.');
                   }
               }
           }
@@ -218,16 +250,22 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'active': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit"><CheckCircle2 size={12}/> نشط</span>;
-          case 'upcoming': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit"><Clock size={12}/> قادم</span>;
-          case 'closed': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit"><X size={12}/> مغلق</span>;
+          case 'active': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit border border-green-200"><CheckCircle2 size={12}/> نشط</span>;
+          case 'upcoming': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit border border-blue-200"><Clock size={12}/> قادم</span>;
+          case 'closed': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit border border-gray-200"><X size={12}/> مغلق</span>;
           default: return null;
       }
   };
 
   const getEventTypeLabel = (type: string) => {
-      const types: any = { 'evaluation': 'تقييم أداء', 'audit': 'تدقيق ومراجعة', 'objection': 'فترة اعتراضات', 'other': 'أخرى' };
-      return types[type] || type;
+      const types: any = { 
+          'evaluation': { label: 'تقييم أداء', class: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
+          'audit': { label: 'تدقيق ومراجعة', class: 'bg-orange-50 text-orange-700 border-orange-100' },
+          'objection': { label: 'فترة اعتراضات', class: 'bg-red-50 text-red-700 border-red-100' },
+          'other': { label: 'أخرى', class: 'bg-gray-50 text-gray-700 border-gray-100' }
+      };
+      const info = types[type] || types['other'];
+      return <span className={`px-2 py-0.5 rounded text-xs border ${info.class}`}>{info.label}</span>;
   };
 
   return (
@@ -286,7 +324,10 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                             ? `أحداث مدرسة: ${adminSchoolList.find(s=>s.id===selectedAdminSchoolId)?.name}`
                             : 'قائمة الأحداث والفترات'}
                       </span>
-                      {events.length > 0 && <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{events.length}</span>}
+                      <div className="flex items-center gap-2">
+                          {events.length > 0 && <span className="text-xs bg-gray-200 px-2 py-1 rounded-full text-gray-600">{events.length}</span>}
+                          <button onClick={fetchEvents} className="p-1 hover:bg-gray-200 rounded text-gray-500" title="تحديث"><RefreshCw size={14}/></button>
+                      </div>
                   </div>
                   
                   {events.length === 0 ? (
@@ -318,7 +359,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {events.map(event => (
-                                        <tr key={event.id} className="hover:bg-gray-50">
+                                        <tr key={event.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-bold text-gray-800">{event.name}</td>
                                             <td className="px-6 py-4 text-sm">{getEventTypeLabel(event.type)}</td>
                                             <td className="px-6 py-4 text-sm font-mono text-gray-600">{event.start_date}</td>
@@ -326,10 +367,10 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                                             <td className="px-6 py-4">{getStatusBadge(event.status)}</td>
                                             <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{event.description || '-'}</td>
                                             <td className="px-6 py-4 flex justify-end gap-2">
-                                                <button onClick={() => handleOpenModal(event)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg">
+                                                <button onClick={() => handleOpenModal(event)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
                                                     <Edit2 size={16} />
                                                 </button>
-                                                <button onClick={() => handleDelete(event.id)} className="p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg">
+                                                <button onClick={() => handleDelete(event.id)} className="p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={16} />
                                                 </button>
                                             </td>
@@ -340,18 +381,18 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                         </div>
 
                         {/* Mobile Card View */}
-                        <div className="md:hidden flex flex-col gap-3">
+                        <div className="md:hidden flex flex-col gap-3 p-3">
                             {events.map((event) => (
                                 <div key={event.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
                                     <div className="flex justify-between items-start mb-2">
                                         <div>
                                             <h4 className="font-bold text-gray-900 text-lg">{event.name}</h4>
-                                            <span className="text-xs text-gray-500">{getEventTypeLabel(event.type)}</span>
+                                            <div className="mt-1">{getEventTypeLabel(event.type)}</div>
                                         </div>
                                         <div className="relative">
                                             <button 
                                                 onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)}
-                                                className="text-gray-400 p-1"
+                                                className="text-gray-400 p-1 bg-gray-50 rounded-lg"
                                             >
                                                 <MoreHorizontal size={20} />
                                             </button>
@@ -364,8 +405,8 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                                         </div>
                                     </div>
                                     
-                                    <div className="flex justify-between items-center mb-3">
-                                        <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    <div className="flex justify-between items-center mb-3 text-sm">
+                                        <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded font-mono border border-gray-100">
                                             {event.start_date} <span className="mx-1">→</span> {event.end_date}
                                         </div>
                                         {getStatusBadge(event.status)}

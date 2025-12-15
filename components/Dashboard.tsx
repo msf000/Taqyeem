@@ -9,6 +9,7 @@ interface DashboardProps {
   userName: string;
   userRole: UserRole;
   schoolId?: string;
+  nationalId?: string; // Added prop
   onNavigate: (tab: any) => void;
   onImportClick: () => void;
 }
@@ -44,7 +45,7 @@ const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white",
   </button>
 );
 
-export default function Dashboard({ userId, userName, userRole, schoolId, onNavigate, onImportClick }: DashboardProps) {
+export default function Dashboard({ userId, userName, userRole, schoolId, nationalId, onNavigate, onImportClick }: DashboardProps) {
   const [stats, setStats] = useState({
     schools: 0,
     teachers: 0,
@@ -92,13 +93,34 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
         } else {
             // Normal Admin/Principal Stats
             
-            // Schools count
-            const { count: schoolsCount } = await supabase.from('schools').select('*', { count: 'exact', head: true });
+            // Schools count (Global for Admin)
+            let schoolsCount = 0;
+            if (userRole === UserRole.ADMIN) {
+                const { count } = await supabase.from('schools').select('*', { count: 'exact', head: true });
+                schoolsCount = count || 0;
+            }
+
+            // Determine Target School ID for Principal
+            let targetSchoolId = schoolId;
+            if (userRole === UserRole.PRINCIPAL) {
+                if (!targetSchoolId && nationalId) {
+                    // Try to resolve school ID via nationalId
+                    const { data: schoolData } = await supabase.from('schools').select('id').eq('manager_national_id', nationalId).single();
+                    if (schoolData) {
+                        targetSchoolId = schoolData.id;
+                    }
+                }
+            }
 
             // Teachers count
             let teachersQuery = supabase.from('teachers').select('*', { count: 'exact', head: true });
-            if (userRole === UserRole.PRINCIPAL && schoolId) {
-                teachersQuery = teachersQuery.eq('school_id', schoolId);
+            if (userRole === UserRole.PRINCIPAL) {
+                if (targetSchoolId) {
+                    teachersQuery = teachersQuery.eq('school_id', targetSchoolId);
+                } else {
+                    // Force 0 if no school identified
+                    teachersQuery = teachersQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+                }
             }
             const { count: teachersCount } = await teachersQuery;
 
@@ -107,32 +129,34 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
             let completedCount = 0;
             let objectionsCount = 0;
 
-            if (userRole === UserRole.PRINCIPAL && schoolId) {
-                // Logic for Principal
-                const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', schoolId);
-                const teacherIds = schoolTeachers?.map(t => t.id) || [];
-                
-                if (teacherIds.length > 0) {
-                    const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
-                    const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
-                    // Count Pending Objections
-                    const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
+            if (userRole === UserRole.PRINCIPAL) {
+                if (targetSchoolId) {
+                    // Logic for Principal
+                    const { data: schoolTeachers } = await supabase.from('teachers').select('id').eq('school_id', targetSchoolId);
+                    const teacherIds = schoolTeachers?.map(t => t.id) || [];
                     
-                    evalsCount = ec || 0;
-                    completedCount = cc || 0;
-                    objectionsCount = oc || 0;
+                    if (teacherIds.length > 0) {
+                        const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
+                        const { count: cc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('status', 'completed');
+                        // Count Pending Objections
+                        const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
+                        
+                        evalsCount = ec || 0;
+                        completedCount = cc || 0;
+                        objectionsCount = oc || 0;
 
-                    // Fetch Recent Activity for Principal
-                    const { data: recent } = await supabase
-                        .from('evaluations')
-                        .select('id, teacher_id, total_score, created_at, status, teachers(name)')
-                        .in('teacher_id', teacherIds)
-                        .order('created_at', { ascending: false })
-                        .limit(3);
-                    setRecentActivity(recent || []);
+                        // Fetch Recent Activity for Principal
+                        const { data: recent } = await supabase
+                            .from('evaluations')
+                            .select('id, teacher_id, total_score, created_at, status, teachers(name)')
+                            .in('teacher_id', teacherIds)
+                            .order('created_at', { ascending: false })
+                            .limit(3);
+                        setRecentActivity(recent || []);
 
-                } else {
-                    setRecentActivity([]);
+                    } else {
+                        setRecentActivity([]);
+                    }
                 }
             } else if (userRole === UserRole.ADMIN) {
                 const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true });
@@ -144,16 +168,22 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
             }
 
             // New stats for Admin
-            const { count: usersCount } = await supabase.from('app_users').select('*', { count: 'exact', head: true });
-            const { count: subsCount } = await supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active');
+            let usersCount = 0;
+            let subsCount = 0;
+            if (userRole === UserRole.ADMIN) {
+                const { count: uc } = await supabase.from('app_users').select('*', { count: 'exact', head: true });
+                const { count: sc } = await supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active');
+                usersCount = uc || 0;
+                subsCount = sc || 0;
+            }
 
             setStats({
-                schools: schoolsCount || 0,
+                schools: schoolsCount,
                 teachers: teachersCount || 0,
                 evaluations: evalsCount || 0,
                 completedEvals: completedCount || 0,
-                users: usersCount || 0,
-                subscriptions: subsCount || 0,
+                users: usersCount,
+                subscriptions: subsCount,
                 objections: objectionsCount || 0
             });
         }
@@ -167,7 +197,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
 
   useEffect(() => {
     fetchStats();
-  }, [userRole, schoolId, userId]);
+  }, [userRole, schoolId, userId, nationalId]); // Added nationalId to dependencies
 
   const getRoleBadge = () => {
       switch(userRole) {
