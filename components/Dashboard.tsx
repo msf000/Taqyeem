@@ -16,7 +16,7 @@ interface DashboardProps {
 const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description, gradient }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string, gradient?: string }) => (
   <button 
     onClick={onClick}
-    className={`${colorClass} ${gradient ? gradient : 'bg-white'} p-5 md:p-6 rounded-2xl shadow-card border border-secondary-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-start justify-between gap-4 group relative min-h-[160px] h-auto md:h-52 w-full text-right overflow-hidden`}
+    className={`${colorClass} ${gradient ? gradient : 'bg-white'} p-5 md:p-6 rounded-2xl shadow-card border border-secondary-100 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex flex-col items-start justify-between gap-4 group relative min-h-[160px] h-auto md:h-52 w-full text-right overflow-hidden touch-manipulation`}
   >
     {/* Background Pattern for decoration */}
     <div className="absolute top-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -translate-x-10 -translate-y-10"></div>
@@ -315,7 +315,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 text-right">
                             <div 
                                 onClick={() => onNavigate('teacher_evaluation')}
-                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
+                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30 active:scale-[0.98] touch-manipulation"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-primary-600 transition-colors">
@@ -329,7 +329,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                             
                             <div 
                                 onClick={() => onNavigate('teacher_profile')}
-                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
+                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30 active:scale-[0.98] touch-manipulation"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-blue-600 transition-colors">

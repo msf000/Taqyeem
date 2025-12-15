@@ -399,18 +399,25 @@ export default function App() {
       </button>
   );
 
-  // Helper for Mobile Bottom Nav Item
+  // Helper for Mobile Bottom Nav Item with Haptic Feedback and Active State
   const MobileNavItem = ({ tab, icon: Icon, label }: { tab: Tab, icon: any, label: string }) => (
       <button 
-        onClick={() => { setActiveTab(tab); setCurrentView('main'); setSelectedTeacherId(null); }}
-        className={`flex flex-col items-center justify-center p-2 flex-1 transition-colors ${
-            activeTab === tab ? 'text-primary-600' : 'text-gray-400 hover:text-gray-600'
+        onClick={() => { 
+            // Add vibration feedback if supported
+            if (navigator.vibrate) navigator.vibrate(10);
+            setActiveTab(tab); 
+            setCurrentView('main'); 
+            setSelectedTeacherId(null); 
+        }}
+        className={`relative flex flex-col items-center justify-center py-2 flex-1 transition-all active:scale-95 ${
+            activeTab === tab ? 'text-primary-600' : 'text-gray-400 hover:text-gray-500'
         }`}
+        style={{ WebkitTapHighlightColor: 'transparent' }}
       >
-        <div className={`p-1 rounded-full ${activeTab === tab ? 'bg-primary-50' : ''}`}>
-            <Icon size={22} strokeWidth={activeTab === tab ? 2.5 : 2} />
+        <div className={`p-1.5 rounded-2xl transition-all duration-300 ${activeTab === tab ? 'bg-primary-50 translate-y-[-2px]' : ''}`}>
+            <Icon size={24} strokeWidth={activeTab === tab ? 2.5 : 2} />
         </div>
-        <span className="text-[10px] font-medium mt-0.5">{label}</span>
+        <span className={`text-[10px] font-bold mt-0.5 ${activeTab === tab ? 'text-primary-700' : 'text-gray-500'}`}>{label}</span>
       </button>
   );
 
@@ -571,8 +578,8 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-bottom shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <div className="flex justify-around items-center px-1">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="flex justify-around items-center px-2">
               <MobileNavItem tab={Tab.DASHBOARD} icon={Home} label="الرئيسة" />
               
               {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
