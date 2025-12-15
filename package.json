@@ -15,7 +15,8 @@
     "recharts": "^3.5.0",
     "@supabase/supabase-js": "^2.86.0",
     "read-excel-file": "5.7.1",
-    "write-excel-file": "1.4.30"
+    "write-excel-file": "1.4.30",
+    "@google/genai": "^1.31.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

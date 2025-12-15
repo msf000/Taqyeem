@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Edit2, Trash2, X, Loader2, CheckCircle2, Clock, AlertCircle, Database, School as SchoolIcon } from 'lucide-react';
+import { Calendar, Plus, Edit2, Trash2, X, Loader2, CheckCircle2, Clock, AlertCircle, Database, School as SchoolIcon, MoreHorizontal } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { SchoolEvent, UserRole, School } from '../types';
 
@@ -17,6 +17,9 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   
+  // Mobile Action Menu
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
   // Admin school filter
   const [adminSchoolList, setAdminSchoolList] = useState<School[]>([]);
   const [selectedAdminSchoolId, setSelectedAdminSchoolId] = useState<string>('');
@@ -74,9 +77,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
           if (targetSchoolId) {
               query = query.eq('school_id', targetSchoolId);
           } else {
-              // Fallback for global events if needed, or prevent access
-              // For now, if no school ID (e.g. system wide), maybe fetch nulls?
-              // query = query.is('school_id', null);
+              // Fallback for global events if needed
           }
 
           const { data, error } = await query;
@@ -129,6 +130,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
           });
       }
       setIsModalOpen(true);
+      setOpenMenuId(null);
   };
 
   const handleSave = async () => {
@@ -235,7 +237,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                   <Calendar className="text-primary-600" /> إدارة الأحداث والفترات
               </h2>
               
-              <div className="flex gap-2 w-full md:w-auto">
+              <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
                   {userRole === UserRole.ADMIN && (
                       <select 
                           className="bg-white border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 w-full md:w-64"
@@ -252,7 +254,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                   <button 
                       onClick={() => handleOpenModal()}
                       disabled={userRole === UserRole.ADMIN && !selectedAdminSchoolId}
-                      className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed justify-center"
                   >
                       <Plus size={18} /> إضافة حدث جديد
                   </button>
@@ -277,7 +279,7 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
           {isLoading ? (
               <div className="flex justify-center p-12"><Loader2 className="animate-spin text-primary-600" size={32} /></div>
           ) : !fetchError && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 md:bg-white rounded-xl md:shadow-sm md:border border-gray-200 overflow-hidden">
                   <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
                       <span className="text-sm font-bold text-gray-700">
                           {userRole === UserRole.ADMIN && selectedAdminSchoolId 
@@ -299,39 +301,85 @@ export default function EventsManagement({ userRole, schoolId }: EventsManagemen
                           )}
                       </div>
                   ) : (
-                      <table className="w-full text-right">
-                          <thead className="bg-gray-50 text-gray-600 text-sm">
-                              <tr>
-                                  <th className="px-6 py-3">اسم الحدث</th>
-                                  <th className="px-6 py-3">النوع</th>
-                                  <th className="px-6 py-3">تاريخ البداية</th>
-                                  <th className="px-6 py-3">تاريخ النهاية</th>
-                                  <th className="px-6 py-3">الحالة</th>
-                                  <th className="px-6 py-3">الوصف</th>
-                                  <th className="px-6 py-3"></th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                              {events.map(event => (
-                                  <tr key={event.id} className="hover:bg-gray-50">
-                                      <td className="px-6 py-4 font-bold text-gray-800">{event.name}</td>
-                                      <td className="px-6 py-4 text-sm">{getEventTypeLabel(event.type)}</td>
-                                      <td className="px-6 py-4 text-sm font-mono text-gray-600">{event.start_date}</td>
-                                      <td className="px-6 py-4 text-sm font-mono text-gray-600">{event.end_date}</td>
-                                      <td className="px-6 py-4">{getStatusBadge(event.status)}</td>
-                                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{event.description || '-'}</td>
-                                      <td className="px-6 py-4 flex justify-end gap-2">
-                                          <button onClick={() => handleOpenModal(event)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg">
-                                              <Edit2 size={16} />
-                                          </button>
-                                          <button onClick={() => handleDelete(event.id)} className="p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg">
-                                              <Trash2 size={16} />
-                                          </button>
-                                      </td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
+                      <>
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-50 text-gray-600 text-sm">
+                                    <tr>
+                                        <th className="px-6 py-3">اسم الحدث</th>
+                                        <th className="px-6 py-3">النوع</th>
+                                        <th className="px-6 py-3">تاريخ البداية</th>
+                                        <th className="px-6 py-3">تاريخ النهاية</th>
+                                        <th className="px-6 py-3">الحالة</th>
+                                        <th className="px-6 py-3">الوصف</th>
+                                        <th className="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {events.map(event => (
+                                        <tr key={event.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 font-bold text-gray-800">{event.name}</td>
+                                            <td className="px-6 py-4 text-sm">{getEventTypeLabel(event.type)}</td>
+                                            <td className="px-6 py-4 text-sm font-mono text-gray-600">{event.start_date}</td>
+                                            <td className="px-6 py-4 text-sm font-mono text-gray-600">{event.end_date}</td>
+                                            <td className="px-6 py-4">{getStatusBadge(event.status)}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{event.description || '-'}</td>
+                                            <td className="px-6 py-4 flex justify-end gap-2">
+                                                <button onClick={() => handleOpenModal(event)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg">
+                                                    <Edit2 size={16} />
+                                                </button>
+                                                <button onClick={() => handleDelete(event.id)} className="p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile Card View */}
+                        <div className="md:hidden flex flex-col gap-3">
+                            {events.map((event) => (
+                                <div key={event.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h4 className="font-bold text-gray-900 text-lg">{event.name}</h4>
+                                            <span className="text-xs text-gray-500">{getEventTypeLabel(event.type)}</span>
+                                        </div>
+                                        <div className="relative">
+                                            <button 
+                                                onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)}
+                                                className="text-gray-400 p-1"
+                                            >
+                                                <MoreHorizontal size={20} />
+                                            </button>
+                                            {openMenuId === event.id && (
+                                                <div className="absolute left-0 top-full mt-1 w-32 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden">
+                                                    <button onClick={() => handleOpenModal(event)} className="block w-full text-right px-4 py-3 text-sm text-gray-700 border-b border-gray-50">تعديل</button>
+                                                    <button onClick={() => handleDelete(event.id)} className="block w-full text-right px-4 py-3 text-sm text-red-600">حذف</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                            {event.start_date} <span className="mx-1">→</span> {event.end_date}
+                                        </div>
+                                        {getStatusBadge(event.status)}
+                                    </div>
+                                    
+                                    {event.description && (
+                                        <p className="text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 line-clamp-2">
+                                            {event.description}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                      </>
                   )}
               </div>
           )}

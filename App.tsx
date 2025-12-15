@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw, ShieldCheck, GraduationCap, UserCheck } from 'lucide-react';
+import { LayoutDashboard, School, Users, BarChart3, Settings, Import, FileText, AlertCircle, LogOut, Truck, AlignLeft, Calendar, MessageSquareWarning, ChevronDown, Check, Building2, RefreshCw, ShieldCheck, GraduationCap, UserCheck, Home, Download, WifiOff } from 'lucide-react';
 import { UserRole, User } from './types';
 import Dashboard from './components/Dashboard';
 import SchoolManagement from './components/SchoolManagement';
@@ -44,6 +44,10 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
+  // PWA State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
   useEffect(() => {
       const savedUser = localStorage.getItem('nizam_user');
       if (savedUser) {
@@ -53,7 +57,38 @@ export default function App() {
               localStorage.removeItem('nizam_user');
           }
       }
+
+      // PWA Install Event Listener
+      const handleBeforeInstallPrompt = (e: any) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+      };
+      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+      // Offline Status Listeners
+      const handleOnline = () => setIsOffline(false);
+      const handleOffline = () => setIsOffline(true);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      return () => {
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
   }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+          setDeferredPrompt(null);
+        }
+      });
+    }
+  };
 
   // Persist Navigation State
   useEffect(() => {
@@ -350,7 +385,7 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  // Helper for Nav Item
+  // Helper for Nav Item (Desktop)
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab, icon: any, label: string }) => (
       <button 
         onClick={() => { setActiveTab(tab); setCurrentView('main'); setSelectedTeacherId(null); }}
@@ -361,6 +396,21 @@ export default function App() {
         }`}
       >
         <Icon size={20} strokeWidth={activeTab === tab ? 2.5 : 2} /> {label}
+      </button>
+  );
+
+  // Helper for Mobile Bottom Nav Item
+  const MobileNavItem = ({ tab, icon: Icon, label }: { tab: Tab, icon: any, label: string }) => (
+      <button 
+        onClick={() => { setActiveTab(tab); setCurrentView('main'); setSelectedTeacherId(null); }}
+        className={`flex flex-col items-center justify-center p-2 flex-1 transition-colors ${
+            activeTab === tab ? 'text-primary-600' : 'text-gray-400 hover:text-gray-600'
+        }`}
+      >
+        <div className={`p-1 rounded-full ${activeTab === tab ? 'bg-primary-50' : ''}`}>
+            <Icon size={22} strokeWidth={activeTab === tab ? 2.5 : 2} />
+        </div>
+        <span className="text-[10px] font-medium mt-0.5">{label}</span>
       </button>
   );
 
@@ -376,20 +426,20 @@ export default function App() {
   return (
     <div className="min-h-screen bg-secondary-50 text-right font-sans" dir="rtl">
       {/* Top Header */}
-      <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-200 no-print">
+      <header className="bg-white/95 backdrop-blur-md sticky top-0 z-50 border-b border-gray-200 no-print transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
+          <div className="flex justify-between items-center h-16 md:h-20">
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setActiveTab(Tab.DASHBOARD)}>
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary-200 group-hover:scale-105 transition-transform">أ</div>
-                <div>
+                <div className="hidden sm:block">
                     <h1 className="font-bold text-lg text-secondary-900 tracking-tight leading-tight">نظام الأداء الوظيفي للمدارس <span className="text-primary-600">"أدائي"</span></h1>
                     <p className="text-[10px] text-secondary-500 font-medium">الإصدار المؤسسي 2.1</p>
                 </div>
               </div>
               
-              {/* Navigation Links */}
-              <nav className="hidden md:flex gap-2 mr-6">
+              {/* Navigation Links - Desktop Only */}
+              <nav className="hidden md:flex gap-1 mr-4 overflow-x-auto">
                 <NavItem tab={Tab.DASHBOARD} icon={LayoutDashboard} label="الرئيسة" />
                 
                 {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
@@ -426,7 +476,7 @@ export default function App() {
                     onClick={() => setShowUserMenu(!showUserMenu)}
                     className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200"
                 >
-                    <div className="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold text-lg shadow-sm border-2 border-white">
+                    <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold text-lg shadow-sm border-2 border-white">
                         {currentUser.name.charAt(0)}
                     </div>
                     <div className="hidden md:block text-right">
@@ -443,6 +493,18 @@ export default function App() {
                             <p className="font-bold text-secondary-900">{currentUser.name}</p>
                             <p className="text-xs text-secondary-500 mt-0.5 font-mono">{currentUser.email || currentUser.nationalId}</p>
                         </div>
+
+                        {/* Install Button (PWA) */}
+                        {deferredPrompt && (
+                            <div className="p-3 bg-primary-50 border-b border-primary-100">
+                                <button 
+                                    onClick={handleInstallClick}
+                                    className="w-full bg-primary-600 text-white rounded-xl py-2 text-sm font-bold shadow-sm hover:bg-primary-700 flex items-center justify-center gap-2"
+                                >
+                                    <Download size={16} /> تثبيت التطبيق
+                                </button>
+                            </div>
+                        )}
 
                         {/* Profiles Switcher */}
                         {availableProfiles.length > 0 ? (
@@ -495,10 +557,48 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-[calc(100vh-5rem)]">
+      {/* Offline Banner */}
+      {isOffline && (
+          <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold fixed bottom-16 md:bottom-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 shadow-lg animate-fade-in">
+              <WifiOff size={16} />
+              أنت غير متصل بالإنترنت. يتم عرض البيانات المخزنة مؤقتاً.
+          </div>
+      )}
+
+      {/* Main Content with Padding for Bottom Nav */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 min-h-[calc(100vh-5rem)] pb-24 md:pb-8">
         {renderContent()}
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-bottom shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="flex justify-around items-center px-1">
+              <MobileNavItem tab={Tab.DASHBOARD} icon={Home} label="الرئيسة" />
+              
+              {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.PRINCIPAL) && (
+                  <MobileNavItem tab={Tab.SCHOOLS} icon={School} label="المدارس" />
+              )}
+
+              {(currentUser.role !== UserRole.TEACHER) && (
+                  <MobileNavItem tab={Tab.TEACHERS} icon={Users} label="المعلمين" />
+              )}
+
+              {currentUser.role === UserRole.TEACHER ? (
+                  <MobileNavItem tab={Tab.TEACHER_EVALUATION} icon={FileText} label="تقييمي" />
+              ) : (
+                  <MobileNavItem tab={Tab.ANALYTICS} icon={BarChart3} label="التقارير" />
+              )}
+              
+              {/* Show different last item based on role */}
+              {currentUser.role === UserRole.ADMIN ? (
+                  <MobileNavItem tab={Tab.SETTINGS} icon={Settings} label="الإعدادات" />
+              ) : currentUser.role === UserRole.PRINCIPAL ? (
+                  <MobileNavItem tab={Tab.OBJECTIONS} icon={MessageSquareWarning} label="الاعتراضات" />
+              ) : currentUser.role === UserRole.TEACHER ? (
+                  <MobileNavItem tab={Tab.TEACHER_PROFILE} icon={UserCheck} label="ملفي" />
+              ) : null}
+          </div>
+      </nav>
     </div>
   );
 }

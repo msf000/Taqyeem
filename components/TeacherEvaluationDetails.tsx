@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List, Trash2 } from 'lucide-react';
+import { ChevronLeft, ArrowRight, UploadCloud, AlertCircle, FileText, CheckCircle2, Loader2, Link as LinkIcon, Lock, User, School, BookOpen, BadgeCheck, Printer, Calendar, List, Trash2, Eye } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, EvaluationData, EvaluationStatus } from '../types';
 import { supabase } from '../supabaseClient';
 import PrintView from './PrintView';
@@ -289,9 +289,9 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
-          default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">{status}</span>;
+          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200 w-fit">مكتمل</span>;
+          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 w-fit">جاري التقييم (مسودة)</span>;
+          default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold w-fit">{status}</span>;
       }
   };
 
@@ -379,41 +379,76 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                         <p>لا توجد تقييمات مسجلة حتى الآن.</p>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <table className="w-full text-right">
-                            <thead className="bg-gray-50 text-gray-600 text-sm">
-                                <tr>
-                                    <th className="px-6 py-4">الفترة</th>
-                                    <th className="px-6 py-4">تاريخ التقييم</th>
-                                    <th className="px-6 py-4">الدرجة</th>
-                                    <th className="px-6 py-4">الحالة</th>
-                                    <th className="px-6 py-4"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {historyList.map((item) => (
-                                    <tr key={item.id} className="hover:bg-gray-50 group">
-                                        <td className="px-6 py-4 font-bold text-gray-800">{item.period_name || 'غير محدد'}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">
-                                            <div className="flex items-center gap-2">
-                                                <Calendar size={14} className="text-gray-400"/>
-                                                {item.eval_date || new Date(item.created_at).toLocaleDateString('ar-SA')}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 font-bold text-primary-700">{item.total_score}%</td>
-                                        <td className="px-6 py-4">{getStatusBadge(item.status)}</td>
-                                        <td className="px-6 py-4 text-left">
-                                            <button 
-                                                onClick={() => handleSelectEvaluation(item.id)}
-                                                className="bg-primary-50 text-primary-700 hover:bg-primary-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 ml-auto"
-                                            >
-                                                عرض التفاصيل <ChevronLeft size={16} />
-                                            </button>
-                                        </td>
+                    <div className="bg-white md:bg-transparent md:rounded-none rounded-xl shadow-sm md:shadow-none border md:border-none border-gray-200 overflow-hidden">
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-50 text-gray-600 text-sm">
+                                    <tr>
+                                        <th className="px-6 py-4">الفترة</th>
+                                        <th className="px-6 py-4">تاريخ التقييم</th>
+                                        <th className="px-6 py-4">الدرجة</th>
+                                        <th className="px-6 py-4">الحالة</th>
+                                        <th className="px-6 py-4"></th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {historyList.map((item) => (
+                                        <tr key={item.id} className="hover:bg-gray-50 group">
+                                            <td className="px-6 py-4 font-bold text-gray-800">{item.period_name || 'غير محدد'}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-600">
+                                                <div className="flex items-center gap-2">
+                                                    <Calendar size={14} className="text-gray-400"/>
+                                                    {item.eval_date || new Date(item.created_at).toLocaleDateString('ar-SA')}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 font-bold text-primary-700">{item.total_score}%</td>
+                                            <td className="px-6 py-4">{getStatusBadge(item.status)}</td>
+                                            <td className="px-6 py-4 text-left">
+                                                <button 
+                                                    onClick={() => handleSelectEvaluation(item.id)}
+                                                    className="bg-primary-50 text-primary-700 hover:bg-primary-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 ml-auto"
+                                                >
+                                                    عرض التفاصيل <ChevronLeft size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile Card View */}
+                        <div className="md:hidden flex flex-col gap-3">
+                            {historyList.map((item) => (
+                                <div key={item.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <span className="text-xs text-gray-500 mb-1 block">الفترة</span>
+                                            <h4 className="font-bold text-gray-900 text-lg">{item.period_name || 'بدون اسم'}</h4>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="text-xl font-bold text-primary-600">{item.total_score}%</span>
+                                            {getStatusBadge(item.status)}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">
+                                        <Calendar size={14}/>
+                                        تاريخ التقييم: {item.eval_date || new Date(item.created_at).toLocaleDateString('ar-SA')}
+                                    </div>
+
+                                    <div className="flex gap-2 pt-2 border-t border-gray-100">
+                                        <button 
+                                            onClick={() => handleSelectEvaluation(item.id)}
+                                            className="flex-1 bg-primary-50 text-primary-700 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2"
+                                        >
+                                            <Eye size={16}/> التفاصيل
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
@@ -466,45 +501,45 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                     onClick={() => setActiveTab('details')}
                                     className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'details' ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                                 >
-                                    <FileText size={16} /> تفاصيل التقييم
+                                    <FileText size={16} /> <span className="hidden sm:inline">تفاصيل التقييم</span><span className="sm:hidden">التفاصيل</span>
                                 </button>
                             )}
                             <button 
                                 onClick={() => setActiveTab('evidence')}
                                 className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'evidence' ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                             >
-                                <UploadCloud size={16} /> بنك الشواهد
+                                <UploadCloud size={16} /> <span className="hidden sm:inline">بنك الشواهد</span><span className="sm:hidden">الشواهد</span>
                             </button>
                             {selectedEvalId && (
                                 <button 
                                     onClick={() => setActiveTab('objection')}
                                     className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 border-b-2 transition-colors ${activeTab === 'objection' ? 'border-red-500 text-red-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                                 >
-                                    <AlertCircle size={16} /> الاعتراضات
+                                    <AlertCircle size={16} /> <span className="hidden sm:inline">الاعتراضات</span><span className="sm:hidden">اعتراض</span>
                                 </button>
                             )}
                         </div>
 
                         {/* Content */}
-                        <div className="p-6">
+                        <div className="p-4 md:p-6">
                             
                             {/* 1. Details */}
                             {activeTab === 'details' && selectedEvalId && (
-                                <div className="space-y-6">
+                                <div className="space-y-4 md:space-y-6">
                                     {indicators.map((ind, idx) => {
                                         const scoreData = scores[ind.id] || { score: 0, level: 0, notes: '', improvement: '', strengths: '' };
                                         return (
                                             <div key={ind.id} className="border rounded-lg p-4 hover:border-primary-200 transition-colors">
                                                 <div className="flex justify-between items-start mb-3 border-b border-gray-100 pb-2">
-                                                    <h4 className="font-bold text-gray-800">{idx + 1}. {ind.text}</h4>
-                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${scoreData.score > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                    <h4 className="font-bold text-gray-800 text-sm md:text-base">{idx + 1}. {ind.text}</h4>
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${scoreData.score > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                                         {scoreData.score.toFixed(1)} / {ind.weight}
                                                     </span>
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">نقاط القوة / الملاحظات:</span>
-                                                        <div className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em]">
+                                                        <div className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em] text-xs md:text-sm">
                                                             {scoreData.strengths && <span className="block mb-2 font-medium">{scoreData.strengths}</span>}
                                                             {scoreData.notes && <span className="block text-gray-600 text-xs mt-1 border-t border-gray-200 pt-1">{scoreData.notes}</span>}
                                                             {!scoreData.strengths && !scoreData.notes && <span className="text-gray-400 italic">لا يوجد</span>}
@@ -512,7 +547,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                     </div>
                                                     <div>
                                                         <span className="text-gray-500 text-xs block mb-1">فرص التحسين:</span>
-                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em]">
+                                                        <p className="text-gray-700 bg-gray-50 p-2 rounded whitespace-pre-line leading-relaxed min-h-[3em] text-xs md:text-sm">
                                                             {scoreData.improvement || <span className="text-gray-400 italic">لا يوجد</span>}
                                                         </p>
                                                     </div>
@@ -525,13 +560,13 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
 
                             {/* 2. Evidence (Independent) */}
                             {activeTab === 'evidence' && (
-                                <div className="space-y-8">
-                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800 mb-6">
+                                <div className="space-y-6 md:space-y-8">
+                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800 mb-4 md:mb-6">
                                         <strong>ملاحظة:</strong> الشواهد التي ترفعها هنا يتم حفظها في "بنك شواهدك" وتظهر للمقيم في جميع التقييمات. لا حاجة لإعادة رفع نفس الشاهد لكل فترة تقييم.
                                     </div>
 
                                     {/* Add Evidence Form */}
-                                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                    <div className="bg-white p-4 md:p-6 rounded-xl border border-gray-200 shadow-sm">
                                         <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                                             <UploadCloud size={18} className="text-primary-600"/> إرفاق شاهد جديد
                                         </h4>
@@ -592,19 +627,19 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                 {globalEvidence.map((link, i) => {
                                                     const indName = indicators.find(ind => ind.id === link.indicator_id)?.text || 'مؤشر غير معروف';
                                                     return (
-                                                        <div key={link.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 group hover:border-blue-200 transition-colors">
-                                                            <div>
+                                                        <div key={link.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 border rounded-lg bg-gray-50 group hover:border-blue-200 transition-colors gap-3">
+                                                            <div className="flex-1">
                                                                 <p className="font-bold text-sm text-gray-800">{link.description}</p>
                                                                 <p className="text-xs text-gray-500 mt-1">خاص بـ: {indName}</p>
                                                                 <p className="text-[10px] text-gray-400 mt-1">{new Date(link.created_at).toLocaleDateString('ar-SA')}</p>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1 bg-white border px-3 py-1.5 rounded">
+                                                            <div className="flex items-center gap-2 self-end sm:self-center">
+                                                                <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1 bg-white border px-3 py-1.5 rounded shadow-sm">
                                                                     <LinkIcon size={14} /> فتح
                                                                 </a>
                                                                 <button 
                                                                     onClick={() => handleDeleteEvidence(link.id)}
-                                                                    className="text-red-500 hover:bg-red-100 p-2 rounded transition-colors"
+                                                                    className="text-red-500 hover:bg-red-100 p-2 rounded transition-colors bg-white border shadow-sm"
                                                                     title="حذف الشاهد"
                                                                 >
                                                                     <Trash2 size={16} />
@@ -629,8 +664,8 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                         </div>
                                     )}
                                     
-                                    <div className="bg-white border rounded-xl p-6">
-                                        <div className="flex justify-between items-start mb-4">
+                                    <div className="bg-white border rounded-xl p-4 md:p-6">
+                                        <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
                                             <h4 className="font-bold text-gray-800">حالة الاعتراض</h4>
                                             {evaluation?.objectionStatus === 'pending' && <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-bold">قيد المراجعة</span>}
                                             {evaluation?.objectionStatus === 'accepted' && <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold">تم القبول</span>}
@@ -657,7 +692,7 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
                                                 <button 
                                                     onClick={handleSubmitObjection}
                                                     disabled={evaluation?.status !== EvaluationStatus.COMPLETED || isSubmittingObjection || !objectionText.trim()}
-                                                    className="mt-4 bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 font-bold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    className="mt-4 bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 font-bold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed w-full md:w-auto justify-center"
                                                 >
                                                     {isSubmittingObjection && <Loader2 className="animate-spin" size={16} />}
                                                     رفع الاعتراض

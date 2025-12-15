@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, Star, ArrowLeft, Maximize2, Award, HeartHandshake } from 'lucide-react';
+import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, Star, ArrowLeft, Maximize2, Award, HeartHandshake, Wand2, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
+import { GoogleGenAI } from "@google/genai";
 
 interface EvaluationFlowProps {
   teacherId: string;
@@ -18,6 +19,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
+  // Mobile View States
+  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
+
+  // AI Generation State
+  const [generatingField, setGeneratingField] = useState<string | null>(null);
+
   // Data State
   const [currentEvalId, setCurrentEvalId] = useState<string | null>(evaluationId || null);
   const [period, setPeriod] = useState({ name: '', date: new Date().toISOString().split('T')[0] });
@@ -206,6 +213,82 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
     fetchAllData();
   }, [teacherId, evaluationId]);
+
+  // --- AI Text Generation ---
+  const generateAIContent = async (indId: string | 'general', field: 'strengths' | 'improvement' | 'notes' | 'general_notes', currentText: string) => {
+      const fieldKey = `${indId}-${field}`;
+      setGeneratingField(fieldKey);
+
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          let prompt = "";
+
+          if (indId === 'general') {
+              // General Notes Generation
+              if (currentText && currentText.trim().length > 5) {
+                  prompt = `أنت خبير تربوي ومقيم معتمد. قم بإعادة صياغة الملاحظات العامة التالية لتكون أكثر مهنية، شمولية، وبناءة، وتلخص أداء المعلم بشكل احترافي.
+                  
+                  النص الأصلي: "${currentText}"
+                  
+                  المطلوب: نص معاد صياغته بأسلوب تربوي رصين (فقرة واحدة أو نقاط).`;
+              } else {
+                  // Generate Summary based on scores
+                  const totalScore = calculateTotal();
+                  const mastery = getIndicatorMasteryLevel(totalScore, 100).label;
+                  prompt = `أنت خبير تربوي. اكتب ملخصاً عاماً لتقييم أداء معلم حصل على مجموع درجات ${totalScore.toFixed(1)}% بتقدير (${mastery}).
+                  
+                  المطلوب: ملخص تنفيذي مهني (3-4 أسطر) يبرز المستوى العام ويشجع على التطوير المستمر.`;
+              }
+          } else {
+              // Specific Indicator Generation
+              const activeInd = indicators.find(i => i.id === indId);
+              if (!activeInd) return;
+              
+              const level = scores[indId]?.level || 0;
+              const typeLabel = field === 'strengths' ? 'نقاط القوة' : (field === 'improvement' ? 'فرص التحسين' : 'ملاحظات إضافية');
+
+              if (currentText && currentText.trim().length > 5) {
+                  prompt = `أنت خبير تربوي ومقيم معتمد. قم بإعادة صياغة ${typeLabel} التالية لتكون أكثر مهنية، تربوية، وبناءة.
+                  
+                  المؤشر: ${activeInd.text}
+                  النص الأصلي: "${currentText}"
+                  
+                  المطلوب: نص معاد صياغته بنقاط واضحة ومختصرة باللغة العربية الفصحى. بدون مقدمات مثل "إليك النص المعاد صياغته". فقط النص.`;
+              } else {
+                  prompt = `أنت خبير تربوي ومقيم معتمد. اكتب ${typeLabel} مهنية ومختصرة لمعلم تم تقييمه في المؤشر التالي.
+                  
+                  المؤشر: ${activeInd.text}
+                  وصف المؤشر: ${activeInd.description}
+                  مستوى أداء المعلم المرصود: ${level} من 5.
+                  
+                  ${level >= 4 ? 'تنبيه: الأداء عالي جداً، ركز على التميز والنمذجة.' : ''}
+                  ${level <= 2 ? 'تنبيه: الأداء منخفض، ركز على الدعم والتوجيه والإجراءات التصحيحية.' : ''}
+                  
+                  المطلوب: 2-3 نقاط واضحة ومباشرة (bullet points) باللغة العربية الفصحى.`;
+              }
+          }
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+          });
+
+          const generatedText = response.text?.trim();
+          if (generatedText) {
+              if (indId === 'general') {
+                  setGeneralNotes(generatedText);
+              } else {
+                  updateField(indId, field as any, generatedText);
+              }
+          }
+
+      } catch (error) {
+          console.error("AI Generation Error:", error);
+          alert("حدث خطأ أثناء توليد النص. يرجى المحاولة مرة أخرى.");
+      } finally {
+          setGeneratingField(null);
+      }
+  };
 
   // --- Save Logic ---
   const saveToDb = useCallback(async (isManual = false): Promise<boolean> => {
@@ -414,6 +497,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
           if (activeIndicatorIndex > 0) setActiveIndicatorIndex(activeIndicatorIndex - 1);
           else setActiveIndicatorIndex(null);
       }
+      setIsDetailsExpanded(false); // Reset expansion on navigation
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -434,7 +518,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
               <span>المدرسة: {teacherDetails.schoolName}</span>
            </div>
         </div>
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end w-full md:w-auto">
             <span className="text-sm text-gray-500 mb-1">النتيجة الحالية</span>
             <div className="flex items-center gap-3">
                 <span className="text-3xl font-bold text-primary-600">{calculateTotal().toFixed(1)}</span>
@@ -546,65 +630,78 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                         </div>
 
                         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col md:flex-row min-h-[600px]">
-                            {/* Left Side: Verification & Info */}
-                            <div className="w-full md:w-1/3 bg-gray-50 p-6 border-l border-gray-200 flex flex-col">
-                                <h3 className="font-bold text-gray-800 text-xl mb-4 leading-relaxed">{activeInd.text}</h3>
-                                <div className="text-sm text-gray-500 mb-6 bg-white p-3 rounded-lg border border-gray-200">
-                                    {activeInd.description || 'لا يوجد وصف إضافي'}
+                            {/* Left Side: Verification & Info (Collapsible on Mobile) */}
+                            <div className="w-full md:w-1/3 bg-gray-50 border-l border-gray-200 flex flex-col">
+                                {/* Mobile Header for Collapsing */}
+                                <div 
+                                    className="md:hidden p-4 flex justify-between items-center cursor-pointer bg-gray-100 border-b border-gray-200"
+                                    onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
+                                >
+                                    <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                        <Eye size={16}/> تفاصيل المؤشر والشواهد
+                                    </h3>
+                                    {isDetailsExpanded ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
                                 </div>
 
-                                <div className="space-y-6 flex-1">
-                                    <div>
-                                        <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Target size={16}/> مؤشرات التحقق</h4>
-                                        <ul className="space-y-2">
-                                            {activeInd.verificationIndicators.length > 0 ? activeInd.verificationIndicators.map((v, i) => (
-                                                <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                                    <CheckCircle2 size={14} className="text-green-500 mt-0.5 shrink-0"/>
-                                                    <span>{v}</span>
-                                                </li>
-                                            )) : <li className="text-xs text-gray-400">لا توجد مؤشرات محددة</li>}
-                                        </ul>
+                                <div className={`p-6 transition-all duration-300 ${isDetailsExpanded ? 'block' : 'hidden md:flex md:flex-col md:h-full'}`}>
+                                    <h3 className="font-bold text-gray-800 text-xl mb-4 leading-relaxed">{activeInd.text}</h3>
+                                    <div className="text-sm text-gray-500 mb-6 bg-white p-3 rounded-lg border border-gray-200">
+                                        {activeInd.description || 'لا يوجد وصف إضافي'}
                                     </div>
 
-                                    <div>
-                                        <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><ExternalLink size={16}/> الشواهد المرفقة</h4>
-                                        <div className="flex flex-col gap-2">
-                                            {teacherEvidenceLinks.filter(e => e.indicatorId === activeInd.id).map((ev, i) => (
-                                                <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="text-xs bg-white border border-blue-200 text-blue-600 px-3 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2">
-                                                    <FileText size={14}/> {ev.description || `شاهد ${i+1}`}
-                                                </a>
-                                            ))}
-                                            {teacherEvidenceLinks.filter(e => e.indicatorId === activeInd.id).length === 0 && (
-                                                <p className="text-xs text-gray-400 italic">لا توجد شواهد مرفقة من المعلم</p>
-                                            )}
+                                    <div className="space-y-6 flex-1">
+                                        <div>
+                                            <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Target size={16}/> مؤشرات التحقق</h4>
+                                            <ul className="space-y-2">
+                                                {activeInd.verificationIndicators.length > 0 ? activeInd.verificationIndicators.map((v, i) => (
+                                                    <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                                        <CheckCircle2 size={14} className="text-green-500 mt-0.5 shrink-0"/>
+                                                        <span>{v}</span>
+                                                    </li>
+                                                )) : <li className="text-xs text-gray-400">لا توجد مؤشرات محددة</li>}
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><ExternalLink size={16}/> الشواهد المرفقة</h4>
+                                            <div className="flex flex-col gap-2">
+                                                {teacherEvidenceLinks.filter(e => e.indicatorId === activeInd.id).map((ev, i) => (
+                                                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="text-xs bg-white border border-blue-200 text-blue-600 px-3 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2">
+                                                        <FileText size={14}/> {ev.description || `شاهد ${i+1}`}
+                                                    </a>
+                                                ))}
+                                                {teacherEvidenceLinks.filter(e => e.indicatorId === activeInd.id).length === 0 && (
+                                                    <p className="text-xs text-gray-400 italic">لا توجد شواهد مرفقة من المعلم</p>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                
-                                <div className="mt-6 pt-6 border-t border-gray-200">
-                                    <div className="text-center">
-                                        <span className="text-sm text-gray-500 block mb-1">الدرجة المستحقة</span>
-                                        <div className="flex flex-col items-center gap-2">
-                                            <span className="text-4xl font-bold text-primary-600">
-                                                {(scores[activeInd.id]?.score || 0).toFixed(1)} <span className="text-base text-gray-400 font-normal">/ {activeInd.weight}</span>
-                                            </span>
-                                            {/* Mastery Level Badge */}
-                                            {(() => {
-                                                const score = scores[activeInd.id]?.score || 0;
-                                                const mastery = getIndicatorMasteryLevel(score, activeInd.weight);
-                                                return (
-                                                    <span className={`px-3 py-1 rounded-full text-sm font-bold border ${mastery.color}`}>
-                                                        {mastery.label}
-                                                    </span>
-                                                );
-                                            })()}
+                                    
+                                    <div className="mt-6 pt-6 border-t border-gray-200">
+                                        <div className="text-center">
+                                            <span className="text-sm text-gray-500 block mb-1">الدرجة المستحقة</span>
+                                            <div className="flex flex-col items-center gap-2">
+                                                <span className="text-4xl font-bold text-primary-600">
+                                                    {(scores[activeInd.id]?.score || 0).toFixed(1)} <span className="text-base text-gray-400 font-normal">/ {activeInd.weight}</span>
+                                                </span>
+                                                {/* Mastery Level Badge */}
+                                                {(() => {
+                                                    const score = scores[activeInd.id]?.score || 0;
+                                                    const mastery = getIndicatorMasteryLevel(score, activeInd.weight);
+                                                    return (
+                                                        <span className={`px-3 py-1 rounded-full text-sm font-bold border ${mastery.color}`}>
+                                                            {mastery.label}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Right Side: Detailed Scoring */}
-                            <div className="w-full md:w-2/3 p-8 flex flex-col">
+                            <div className="w-full md:w-2/3 p-4 md:p-8 flex flex-col">
                                 <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-2 border-b">
                                     <LayoutList size={20} className="text-primary-600"/> تقييم المعايير التفصيلية
                                 </h4>
@@ -618,12 +715,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                 <p className="text-sm text-gray-800 font-medium mb-3">{idx + 1}. {criterion}</p>
                                                 
                                                 {/* Rating Scale 1-5 */}
-                                                <div className="flex flex-row-reverse justify-end gap-2">
+                                                <div className="flex flex-row-reverse justify-end gap-2 md:gap-2">
                                                     {[5, 4, 3, 2, 1].map((rating) => (
                                                         <button
                                                             key={rating}
                                                             onClick={() => handleSubCriteriaChange(activeInd, idx, rating)}
-                                                            className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm transition-all border ${
+                                                            className={`w-12 h-12 md:w-10 md:h-10 rounded-lg flex items-center justify-center font-bold text-lg md:text-sm transition-all border ${
                                                                 currentSubScore === rating 
                                                                 ? 'bg-primary-600 text-white border-primary-600 scale-110 shadow-md' 
                                                                 : 'bg-white text-gray-400 border-gray-200 hover:border-primary-300'
@@ -649,29 +746,72 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                 </div>
 
                                 {/* Notes Section with Auto-Generation Info */}
-                                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-gray-100">
-                                    <div>
-                                        <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
-                                            <span>نقاط القوة / أهداف مستقبلية (تلقائي)</span>
-                                            <Award size={14} className="text-green-600"/>
-                                        </label>
-                                        <textarea 
-                                            className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none"
-                                            placeholder="سيتم صياغة نقاط القوة بتنوع واحترافية..."
-                                            value={scores[activeInd.id]?.strengths || ''}
-                                            onChange={(e) => updateField(activeInd.id, 'strengths', e.target.value)}
-                                        />
+                                <div className="mt-8 pt-6 border-t border-gray-100 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
+                                                <span>نقاط القوة / أهداف مستقبلية (تلقائي)</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        onClick={() => generateAIContent(activeInd.id, 'strengths', scores[activeInd.id]?.strengths || '')}
+                                                        disabled={generatingField === `${activeInd.id}-strengths`}
+                                                        className="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-1 rounded-md transition-colors"
+                                                        title="إعادة صياغة / توليد بالذكاء الاصطناعي"
+                                                    >
+                                                        {generatingField === `${activeInd.id}-strengths` ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                                    </button>
+                                                    <Award size={14} className="text-green-600"/>
+                                                </div>
+                                            </label>
+                                            <textarea 
+                                                className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none"
+                                                placeholder="سيتم صياغة نقاط القوة بتنوع واحترافية..."
+                                                value={scores[activeInd.id]?.strengths || ''}
+                                                onChange={(e) => updateField(activeInd.id, 'strengths', e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center justify-between">
+                                                <span>خطة التطوير / تطلعات إثرائية</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        onClick={() => generateAIContent(activeInd.id, 'improvement', scores[activeInd.id]?.improvement || '')}
+                                                        disabled={generatingField === `${activeInd.id}-improvement`}
+                                                        className="text-yellow-600 hover:text-yellow-800 bg-yellow-50 hover:bg-yellow-100 p-1 rounded-md transition-colors"
+                                                        title="إعادة صياغة / توليد بالذكاء الاصطناعي"
+                                                    >
+                                                        {generatingField === `${activeInd.id}-improvement` ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                                    </button>
+                                                    <HeartHandshake size={14} className="text-yellow-600"/>
+                                                </div>
+                                            </label>
+                                            <textarea 
+                                                className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-yellow-500 outline-none resize-none leading-relaxed"
+                                                placeholder="سيتم كتابة الخطة أو التطلعات المستقبلية..."
+                                                value={scores[activeInd.id]?.improvement || ''}
+                                                onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
+                                            />
+                                        </div>
                                     </div>
+                                    
+                                    {/* Indicator Notes Field */}
                                     <div>
-                                        <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center justify-between">
-                                            <span>خطة التطوير / تطلعات إثرائية</span>
-                                            <HeartHandshake size={14} className="text-yellow-600"/>
+                                        <label className="block text-xs font-bold text-gray-700 mb-2 flex items-center justify-between">
+                                            <span>ملاحظات إضافية على المؤشر</span>
+                                            <button 
+                                                onClick={() => generateAIContent(activeInd.id, 'notes', scores[activeInd.id]?.notes || '')}
+                                                disabled={generatingField === `${activeInd.id}-notes`}
+                                                className="text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 p-1 rounded-md transition-colors"
+                                                title="تحسين الصياغة"
+                                            >
+                                                {generatingField === `${activeInd.id}-notes` ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+                                            </button>
                                         </label>
                                         <textarea 
-                                            className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-yellow-500 outline-none resize-none leading-relaxed"
-                                            placeholder="سيتم كتابة الخطة أو التطلعات المستقبلية..."
-                                            value={scores[activeInd.id]?.improvement || ''}
-                                            onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
+                                            className="w-full border border-gray-200 bg-gray-50 rounded-lg p-3 text-sm h-20 focus:ring-2 focus:ring-primary-500 outline-none resize-none"
+                                            placeholder="أي ملاحظات أخرى تتعلق بهذا المؤشر..."
+                                            value={scores[activeInd.id]?.notes || ''}
+                                            onChange={(e) => updateField(activeInd.id, 'notes', e.target.value)}
                                         />
                                     </div>
                                 </div>
@@ -711,6 +851,27 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                     <div className="text-sm text-gray-500 mb-1">التقدير اللفظي</div>
                     <div className="text-2xl font-bold text-gray-800">{getIndicatorMasteryLevel(calculateTotal(), 100).label}</div>
                 </div>
+             </div>
+
+             {/* General Notes Section */}
+             <div className="mb-8">
+                 <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center justify-between">
+                     <span>ملاحظات عامة / توصيات إدارية</span>
+                     <button 
+                        onClick={() => generateAIContent('general', 'general_notes', generalNotes)}
+                        disabled={generatingField === `general-general_notes`}
+                        className="text-primary-600 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-3 py-1 rounded-md transition-colors text-xs flex items-center gap-1"
+                     >
+                        {generatingField === `general-general_notes` ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                        توليد ملخص بالذكاء الاصطناعي
+                     </button>
+                 </label>
+                 <textarea 
+                    className="w-full border border-gray-300 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-primary-500 outline-none resize-none leading-relaxed"
+                    placeholder="اكتب هنا أي ملاحظات عامة أو توصيات للمدير أو المعلم..."
+                    value={generalNotes}
+                    onChange={(e) => setGeneralNotes(e.target.value)}
+                 />
              </div>
 
              <div className="flex justify-center gap-4">

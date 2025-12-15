@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Upload, MoreHorizontal, Search, FileText, CheckCircle, XCircle, Loader2, Filter, X, Plus, Trash2, Download, User, ArrowRight, Edit2, Info, History, Shield, ArrowUpDown, ArrowUp, ArrowDown, Phone, Briefcase, ChevronDown, List } from 'lucide-react';
 import { Teacher, TeacherCategory, EvaluationStatus, ImportResult, School, UserRole } from '../types';
 import { supabase } from '../supabaseClient';
 import readXlsxFile from 'read-excel-file';
@@ -15,13 +15,17 @@ interface TeacherManagementProps {
 }
 
 export default function TeacherManagement({ onEvaluate, userRole, schoolId, userName, onViewHistory }: TeacherManagementProps) {
-  const [subTab, setSubTab] = useState<'list' | 'add' | 'import' | 'specialties'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'import'>('list'); // Replaces subTab for main views
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]); 
   const [specialtiesList, setSpecialtiesList] = useState<{id: string, name: string}[]>([]);
   const [newSpecialty, setNewSpecialty] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // UI States for Modals
+  const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
+  const [isSpecialtyModalOpen, setIsSpecialtyModalOpen] = useState(false);
   
   // UI States for Edit/View
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -187,6 +191,13 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     fetchData();
   }, [userRole, schoolId, userName]);
 
+  const handleOpenAddTeacher = () => {
+      setNewTeacher({ category: TeacherCategory.TEACHER });
+      setSelectedRoles([UserRole.TEACHER]);
+      setEditingId(null);
+      setIsTeacherModalOpen(true);
+  };
+
   const handleEditTeacher = (teacher: Teacher) => {
       setNewTeacher({
           name: teacher.name,
@@ -200,8 +211,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
       setSelectedRoles(teacher.roles || [UserRole.TEACHER]);
       setEditingId(teacher.id);
       setOpenMenuId(null);
-      setSubTab('add');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setIsTeacherModalOpen(true);
   };
 
   const handleRoleToggle = (role: UserRole) => {
@@ -231,6 +241,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           
           setTeachers(teachers.filter(t => t.id !== id));
           if (viewTeacher?.id === id) setViewTeacher(null);
+          if (isTeacherModalOpen && editingId === id) setIsTeacherModalOpen(false);
           setOpenMenuId(null);
           
           alert('تم حذف المعلم وجميع تقييماته بنجاح.');
@@ -295,9 +306,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           }
 
           await fetchData();
-          setSubTab('list');
-          setNewTeacher({ category: TeacherCategory.TEACHER });
-          setSelectedRoles([UserRole.TEACHER]);
+          setIsTeacherModalOpen(false);
           setEditingId(null);
       } catch (error: any) {
           console.error("Error saving teacher:", error);
@@ -313,13 +322,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
       } finally {
           setIsSaving(false);
       }
-  };
-
-  const handleCancelEdit = () => {
-      setSubTab('list');
-      setNewTeacher({ category: TeacherCategory.TEACHER });
-      setSelectedRoles([UserRole.TEACHER]);
-      setEditingId(null);
   };
 
   const handleAddSpecialty = async () => {
@@ -347,6 +349,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // ... same as before
     if (!importTargetSchoolId) {
         alert("يرجى اختيار المدرسة أولاً");
         e.target.value = ''; 
@@ -356,7 +359,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Start Loading
     setIsImporting(true);
     setImportResults([]);
     const results: ImportResult[] = [];
@@ -370,7 +372,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             return; 
         }
         
-        // Headers are in rows[0]
         const headers = rows[0].map(h => String(h).trim());
         const nameIdx = headers.findIndex(h => h.includes('اسم') || h.includes('Name'));
         const idIdx = headers.findIndex(h => h.includes('هوية') || h.includes('National'));
@@ -383,12 +384,10 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             return; 
         }
 
-        // Move to results view, but show loading indicator
         setImportStep('results');
 
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            // Handle potentially empty rows
             if (!row || row.length === 0) continue;
 
             const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
@@ -409,7 +408,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                      mobile: mobile, 
                      category: TeacherCategory.TEACHER, 
                      role: UserRole.TEACHER,
-                     roles: [UserRole.TEACHER], // Default import role
+                     roles: [UserRole.TEACHER], 
                      school_id: importTargetSchoolId 
                  }]);
                  
@@ -431,11 +430,12 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         setImportStep('upload');
     } finally {
         e.target.value = '';
-        setIsImporting(false); // Stop loading
+        setIsImporting(false);
     }
   };
 
   const handleDownloadTemplate = async () => {
+    // ... same as before
     const data = [
       [
         { value: 'الاسم الكامل', fontWeight: 'bold' },
@@ -461,7 +461,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     }
   };
 
-  // Filter Logic
+  // Filter & Sorting Logic (Same as before)
   const uniqueSpecialties = Array.from(new Set(teachers.map(t => t.specialty).filter(Boolean)));
   const filteredTeachers = teachers.filter(teacher => {
     const matchesSearch = searchTerm === '' || teacher.name.includes(searchTerm) || teacher.nationalId.includes(searchTerm);
@@ -471,7 +471,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     return matchesSearch && matchesSchool && matchesSpecialty && matchesStatus;
   });
 
-  // Sorting Logic
   const sortedTeachers = [...filteredTeachers].sort((a, b) => {
       let aValue: any = '';
       let bValue: any = '';
@@ -539,80 +538,35 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
 
   return (
     <div className="space-y-6">
-      <div className="flex border-b border-gray-200 gap-6">
-        <button onClick={() => { setSubTab('list'); setEditingId(null); }} className={`pb-3 font-medium transition-colors ${subTab === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>المعلمين</button>
-        
-        {/* Hide admin actions from Evaluator */}
-        {userRole !== UserRole.EVALUATOR && (
-            <>
-                <button onClick={() => { setSubTab('add'); setEditingId(null); setNewTeacher({ category: TeacherCategory.TEACHER }); setSelectedRoles([UserRole.TEACHER]); }} className={`pb-3 font-medium transition-colors ${subTab === 'add' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
-                    {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم'}
+      {/* Top Header & Navigation */}
+      <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+        <div className="flex gap-6 overflow-x-auto pb-1 no-scrollbar">
+            <button onClick={() => setViewMode('list')} className={`pb-2 font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${viewMode === 'list' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+                <User size={18}/> المعلمين
+            </button>
+            
+            {userRole !== UserRole.EVALUATOR && (
+                <button onClick={() => setViewMode('import')} className={`pb-2 font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${viewMode === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>
+                    <Upload size={18}/> استيراد
                 </button>
-                <button onClick={() => setSubTab('import')} className={`pb-3 font-medium transition-colors ${subTab === 'import' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>استيراد المعلمين</button>
-                <button onClick={() => setSubTab('specialties')} className={`pb-3 font-medium transition-colors ${subTab === 'specialties' ? 'border-b-2 border-primary-600 text-primary-700' : 'text-gray-500'}`}>إدارة التخصصات</button>
-            </>
+            )}
+        </div>
+
+        {/* Action Buttons */}
+        {viewMode === 'list' && userRole !== UserRole.EVALUATOR && (
+            <div className="flex gap-2">
+                <button onClick={() => setIsSpecialtyModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-200 hidden sm:flex items-center gap-2 text-sm" title="إدارة التخصصات">
+                    <List size={18}/> التخصصات
+                </button>
+                <button onClick={handleOpenAddTeacher} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 text-sm font-bold shadow-sm">
+                    <Plus size={18}/> إضافة معلم
+                </button>
+            </div>
         )}
       </div>
 
-      {subTab === 'list' && (
+      {viewMode === 'list' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
-            {/* ... View Modal ... */}
-            {viewTeacher && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
-                        <div className="flex justify-between items-center p-6 border-b">
-                            <h3 className="text-xl font-bold flex items-center gap-2">
-                                <User className="text-primary-600" /> 
-                                {viewTeacher.name}
-                            </h3>
-                            <button onClick={() => setViewTeacher(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
-                        </div>
-                        <div className="p-6 space-y-4 text-sm">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">رقم الهوية</label>
-                                    <p className="font-mono font-medium">{viewTeacher.nationalId}</p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">الفئة الوظيفية</label>
-                                    <p className="font-medium text-primary-700">{viewTeacher.category}</p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">التخصص</label>
-                                    <p className="font-medium">{viewTeacher.specialty}</p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">الصلاحيات</label>
-                                    <div className="flex flex-wrap gap-1">
-                                        {viewTeacher.roles && viewTeacher.roles.length > 0 ? (
-                                            viewTeacher.roles.map((r, i) => (
-                                                <span key={i} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">{r}</span>
-                                            ))
-                                        ) : (
-                                            <span className="font-medium">{viewTeacher.role || UserRole.TEACHER}</span>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
-                                    <p className="font-medium" dir="ltr">{viewTeacher.mobile || '-'}</p>
-                                </div>
-                            </div>
-                            <div className="border-t pt-4">
-                                <label className="text-xs text-gray-500 block mb-2">المدرسة التابع لها</label>
-                                <div className="flex items-center gap-2 font-medium">
-                                    <CheckCircle size={16} className="text-green-500"/>
-                                    {schools.find(s => s.id === viewTeacher.schoolId)?.name || 'غير محدد'}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
-                            <button onClick={() => setViewTeacher(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Error Banner */}
             {errorMessage && (
                 <div className="bg-red-50 text-red-700 p-4 border-b border-red-100 flex items-center gap-2">
@@ -625,7 +579,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             {/* Filter Bar */}
             <div className="p-4 border-b border-gray-100 bg-gray-50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
                 <div className="flex flex-1 flex-col md:flex-row gap-3 w-full">
-                    <div className="relative flex-1 max-w-md">
+                    <div className="relative flex-1 w-full">
                         <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
                         <input 
                             type="text" 
@@ -636,8 +590,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                         />
                     </div>
                     
-                    <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
-                        {/* Show school filter even for Principals if they manage multiple schools */}
+                    <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
                         {schools.length > 1 && (
                             <select 
                                 className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 min-w-[140px]"
@@ -662,223 +615,378 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                         )}
                     </div>
                 </div>
-                <div><button onClick={fetchData} className="text-gray-500 hover:text-gray-700 text-sm px-3 py-2">تحديث</button></div>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto min-h-[400px]">
+            {/* List/Table Container */}
+            <div className="min-h-[400px] bg-gray-50 md:bg-white">
                 {isLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary-600" size={30} /></div>
+                ) : sortedTeachers.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 flex flex-col items-center justify-center gap-2">
+                        <Search size={32} className="text-gray-300" />
+                        <p>لا توجد نتائج مطابقة.</p>
+                    </div>
                 ) : (
-                <table className="w-full text-right">
-                    <thead className="bg-gray-50 text-gray-600 text-sm font-semibold">
-                        <tr>
-                            <SortableHeader label="الاسم الكامل" sortKey="name" />
-                            <SortableHeader label="رقم الهوية" sortKey="nationalId" />
-                            <SortableHeader label="فئة المعلم" sortKey="category" />
-                            <th className="px-6 py-4">الصلاحيات</th>
-                            <SortableHeader label="التخصص" sortKey="specialty" />
-                            <SortableHeader label="المدرسة" sortKey="school" />
-                            <th className="px-6 py-4 text-center">الإجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {sortedTeachers.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="text-center py-8 text-gray-500 flex flex-col items-center justify-center gap-2">
-                                    <Search size={32} className="text-gray-300" />
-                                    <p>لا توجد نتائج مطابقة.</p>
-                                </td>
-                            </tr>
-                        ) : (
-                            sortedTeachers.map(teacher => {
-                                const schoolName = schools.find(s => s.id === teacher.schoolId)?.name || '-';
-                                return (
-                                    <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 font-medium text-gray-900">{teacher.name}</td>
-                                        <td className="px-6 py-4 text-gray-600 font-mono text-sm">{teacher.nationalId}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs border border-blue-100">{teacher.category}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <div className="flex flex-wrap gap-1 max-w-[150px]">
-                                                {teacher.roles && teacher.roles.length > 0 ? (
-                                                    teacher.roles.map((r, idx) => (
-                                                        <span key={idx} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md text-[10px] border border-purple-100 font-bold whitespace-nowrap">{r}</span>
-                                                    ))
+                    <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-right">
+                            <thead className="bg-gray-50 text-gray-600 text-sm font-semibold">
+                                <tr>
+                                    <SortableHeader label="الاسم الكامل" sortKey="name" />
+                                    <SortableHeader label="رقم الهوية" sortKey="nationalId" />
+                                    <SortableHeader label="فئة المعلم" sortKey="category" />
+                                    <th className="px-6 py-4">الصلاحيات</th>
+                                    <SortableHeader label="التخصص" sortKey="specialty" />
+                                    <SortableHeader label="المدرسة" sortKey="school" />
+                                    <th className="px-6 py-4 text-center">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {sortedTeachers.map(teacher => {
+                                    const schoolName = schools.find(s => s.id === teacher.schoolId)?.name || '-';
+                                    return (
+                                        <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 font-medium text-gray-900">{teacher.name}</td>
+                                            <td className="px-6 py-4 text-gray-600 font-mono text-sm">{teacher.nationalId}</td>
+                                            <td className="px-6 py-4 text-sm">
+                                                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs border border-blue-100">{teacher.category}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm">
+                                                <div className="flex flex-wrap gap-1 max-w-[150px]">
+                                                    {teacher.roles && teacher.roles.length > 0 ? (
+                                                        teacher.roles.map((r, idx) => (
+                                                            <span key={idx} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md text-[10px] border border-purple-100 font-bold whitespace-nowrap">{r}</span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs">معلم</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
+                                            <td className="px-6 py-4 flex justify-center items-center gap-2">
+                                                {onViewHistory ? (
+                                                    <button 
+                                                        onClick={() => onViewHistory(teacher.id)}
+                                                        className="bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 px-3 py-1.5 rounded text-xs font-bold transition-colors flex items-center gap-1"
+                                                    >
+                                                        <History size={14}/> سجل التقييمات
+                                                    </button>
                                                 ) : (
-                                                    <span className="text-gray-400 text-xs">معلم</span>
+                                                    <button 
+                                                        onClick={() => onEvaluate(teacher.id)}
+                                                        className="text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                                                    >
+                                                        تقييم
+                                                    </button>
+                                                )}
+                                                
+                                                <div className="relative action-menu-container">
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenMenuId(openMenuId === teacher.id ? null : teacher.id);
+                                                        }}
+                                                        className={`p-1 rounded-md transition-colors ${openMenuId === teacher.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                                                    >
+                                                        <MoreHorizontal size={20} />
+                                                    </button>
+                                                    {openMenuId === teacher.id && (
+                                                        <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-100 z-50 overflow-hidden animate-fade-in">
+                                                            <button 
+                                                                onClick={() => { setViewTeacher(teacher); setOpenMenuId(null); }} 
+                                                                className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                            >
+                                                                عرض التفاصيل
+                                                            </button>
+                                                            
+                                                            {userRole !== UserRole.EVALUATOR && (
+                                                                <>
+                                                                    <button 
+                                                                        onClick={() => handleEditTeacher(teacher)} 
+                                                                        className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                                    >
+                                                                        تحرير البيانات
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => { handleDeleteTeacher(teacher.id); }} 
+                                                                        className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                                                    >
+                                                                        حذف
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden grid grid-cols-1 gap-3 p-3">
+                        {sortedTeachers.map(teacher => (
+                            <div key={teacher.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                            {teacher.name}
+                                            {teacher.status === EvaluationStatus.COMPLETED && <CheckCircle size={16} className="text-green-500" />}
+                                        </h3>
+                                        <p className="text-xs text-gray-500 font-mono">{teacher.nationalId}</p>
+                                    </div>
+                                    <div className="relative action-menu-container">
+                                        <button onClick={() => setOpenMenuId(openMenuId === teacher.id ? null : teacher.id)} className="text-gray-400 p-1">
+                                            <MoreHorizontal size={20} />
+                                        </button>
+                                        {openMenuId === teacher.id && (
+                                            <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden">
+                                                <button onClick={() => { setViewTeacher(teacher); setOpenMenuId(null); }} className="block w-full text-right px-4 py-3 text-sm text-gray-700 border-b border-gray-50">التفاصيل</button>
+                                                {userRole !== UserRole.EVALUATOR && (
+                                                    <>
+                                                        <button onClick={() => handleEditTeacher(teacher)} className="block w-full text-right px-4 py-3 text-sm text-gray-700 border-b border-gray-50">تعديل</button>
+                                                        <button onClick={() => handleDeleteTeacher(teacher.id)} className="block w-full text-right px-4 py-3 text-sm text-red-600">حذف</button>
+                                                    </>
                                                 )}
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">{schoolName}</td>
-                                        <td className="px-6 py-4 flex justify-center items-center gap-2">
-                                            {onViewHistory ? (
-                                                <button 
-                                                    onClick={() => onViewHistory(teacher.id)}
-                                                    className="bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 px-3 py-1.5 rounded text-xs font-bold transition-colors flex items-center gap-1"
-                                                >
-                                                    <History size={14}/> سجل التقييمات
-                                                </button>
-                                            ) : (
-                                                <button 
-                                                    onClick={() => onEvaluate(teacher.id)}
-                                                    className="text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-                                                >
-                                                    تقييم
-                                                </button>
-                                            )}
-                                            
-                                            <div className="relative action-menu-container">
-                                                <button 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setOpenMenuId(openMenuId === teacher.id ? null : teacher.id);
-                                                    }}
-                                                    className={`p-1 rounded-md transition-colors ${openMenuId === teacher.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
-                                                >
-                                                    <MoreHorizontal size={20} />
-                                                </button>
-                                                {openMenuId === teacher.id && (
-                                                    <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-100 z-50 overflow-hidden animate-fade-in">
-                                                        <button 
-                                                            onClick={() => { setViewTeacher(teacher); setOpenMenuId(null); }} 
-                                                            className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                        >
-                                                            عرض التفاصيل
-                                                        </button>
-                                                        
-                                                        {/* Restrict Edit/Delete for Evaluator */}
-                                                        {userRole !== UserRole.EVALUATOR && (
-                                                            <>
-                                                                <button 
-                                                                    onClick={() => { handleEditTeacher(teacher); setOpenMenuId(null); }} 
-                                                                    className="block w-full text-right px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                                >
-                                                                    تحرير البيانات
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => { handleDeleteTeacher(teacher.id); setOpenMenuId(null); }} 
-                                                                    className="block w-full text-right px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                                                >
-                                                                    حذف
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs border border-blue-100">{teacher.category}</span>
+                                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">{teacher.specialty}</span>
+                                </div>
+
+                                <div className="flex gap-2 mt-4 pt-3 border-t border-gray-50">
+                                    {onViewHistory ? (
+                                        <button 
+                                            onClick={() => onViewHistory(teacher.id)}
+                                            className="flex-1 bg-white border border-primary-200 text-primary-700 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2"
+                                        >
+                                            <History size={16}/> السجل
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => onEvaluate(teacher.id)}
+                                            className="flex-1 bg-primary-600 text-white py-2 rounded-lg text-sm font-bold shadow-sm"
+                                        >
+                                            تقييم الآن
+                                        </button>
+                                    )}
+                                    {teacher.mobile && (
+                                        <a href={`tel:${teacher.mobile}`} className="p-2 bg-green-50 text-green-600 rounded-lg border border-green-100">
+                                            <Phone size={20} />
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    </>
                 )}
             </div>
-            {/* ... pagination/footer ... */}
-            <div className="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between">
+            <div className="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between hidden md:flex">
                 <span>عرض {filteredTeachers.length} من أصل {teachers.length} معلم</span>
             </div>
         </div>
       )}
 
-      {/* Add Teacher Tab */}
-      {subTab === 'add' && (
-         <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                {editingId ? <Edit2 size={24} className="text-primary-600"/> : <Plus size={24} className="text-primary-600"/>}
-                {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم جديد'}
-            </h3>
-             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-6 flex gap-3 text-sm text-blue-800">
-                <Info className="shrink-0 text-blue-600" size={20} />
-                <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام. يمكن إسناد أكثر من صلاحية لنفس المعلم (مثلاً معلم ومقيم في آن واحد).</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {/* Only show School selection if Admin OR Principal manages multiple schools */}
-                 {(userRole === UserRole.ADMIN || (userRole === UserRole.PRINCIPAL && schools.length > 1)) && (
-                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة <span className="text-red-500">*</span></label>
-                        <select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 bg-white" value={newTeacher.schoolId || ''} onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}>
-                            <option value="">اختر المدرسة</option>
-                            {schools.map(school => <option key={school.id} value={school.id}>{school.name}</option>)}
-                        </select>
-                     </div>
-                 )}
-                 {(schools.length === 1 && !newTeacher.schoolId) && (
-                     <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2">
-                        <CheckCircle className="text-blue-600" size={20}/>
-                        <span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span>
-                     </div>
-                 )}
-                 {schools.length === 0 && (
-                     <div className="md:col-span-2 bg-red-50 p-3 rounded-lg border border-red-100 flex items-center gap-2"><XCircle className="text-red-600" size={20}/><span className="text-sm text-red-800 font-medium">عفواً، لا توجد مدارس مسجلة.</span></div>
-                 )}
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.name || ''} onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-mono text-left" dir="ltr" placeholder="10xxxxxxxx" value={newTeacher.nationalId || ''} onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label><select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.category} onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}>{Object.values(TeacherCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
-                 
-                 {/* Role Selection (Multi-select) */}
-                 <div className="md:col-span-2 bg-purple-50 p-4 rounded-xl border border-purple-100">
-                     <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">
-                         <Shield size={16}/> صلاحيات النظام (System Roles)
-                     </label>
-                     <p className="text-xs text-gray-500 mb-3">اختر الصلاحيات التي يمتلكها هذا الموظف في النظام (يمكن اختيار أكثر من واحدة).</p>
-                     
-                     <div className="flex flex-wrap gap-3">
-                         {[UserRole.TEACHER, UserRole.EVALUATOR, UserRole.PRINCIPAL].map(role => (
-                             <label key={role} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${selectedRoles.includes(role) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'}`}>
-                                 <input 
-                                     type="checkbox" 
-                                     className="hidden"
-                                     checked={selectedRoles.includes(role)}
-                                     onChange={() => handleRoleToggle(role)}
-                                 />
-                                 {selectedRoles.includes(role) ? <CheckCircle size={16} className="text-white"/> : <span className="w-4 h-4 rounded-full border border-gray-300 bg-gray-50"></span>}
-                                 <span className="text-sm font-medium">{role}</span>
-                             </label>
-                         ))}
-                     </div>
-                 </div>
-
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label><input type="tel" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-left" dir="ltr" value={newTeacher.mobile || ''} onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})} /></div>
-            </div>
-            
-            {/* Footer Buttons including Delete */}
-            <div className="mt-8 flex flex-col-reverse sm:flex-row justify-between gap-3 pt-4 border-t border-gray-100">
-                <div className="w-full sm:w-auto">
-                    {editingId && (
-                        <button 
-                            onClick={async () => {
-                                const success = await handleDeleteTeacher(editingId);
-                                if (success) {
-                                    setSubTab('list');
-                                    setEditingId(null);
-                                    setNewTeacher({ category: TeacherCategory.TEACHER });
-                                    setSelectedRoles([UserRole.TEACHER]);
-                                }
-                            }} 
-                            className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                        >
-                            <Trash2 size={18} /> حذف المعلم
-                        </button>
-                    )}
+      {/* Add Teacher Modal */}
+      {isTeacherModalOpen && (
+         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
+                    <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        {editingId ? <Edit2 size={24} className="text-primary-600"/> : <Plus size={24} className="text-primary-600"/>}
+                        {editingId ? 'تعديل بيانات المعلم' : 'إضافة معلم جديد'}
+                    </h3>
+                    <button onClick={() => setIsTeacherModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
                 </div>
                 
-                <div className="flex gap-3 w-full sm:w-auto justify-end">
-                    <button onClick={handleCancelEdit} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">إلغاء</button>
-                    <button onClick={handleSaveTeacher} disabled={isSaving} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">{isSaving && <Loader2 className="animate-spin" size={16} />}{editingId ? 'حفظ التعديلات' : 'حفظ المعلم'}</button>
+                <div className="p-6 space-y-6">
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-3 text-sm text-blue-800">
+                        <Info className="shrink-0 text-blue-600" size={20} />
+                        <p>سيتم استخدام <strong>رقم الهوية الوطنية</strong> كاسم مستخدم لدخول المعلم للنظام.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {(userRole === UserRole.ADMIN || (userRole === UserRole.PRINCIPAL && schools.length > 1)) && (
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة <span className="text-red-500">*</span></label>
+                                <select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 bg-white" value={newTeacher.schoolId || ''} onChange={(e) => setNewTeacher({...newTeacher, schoolId: e.target.value})}>
+                                    <option value="">اختر المدرسة</option>
+                                    {schools.map(school => <option key={school.id} value={school.id}>{school.name}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        {(schools.length === 1 && !newTeacher.schoolId) && (
+                            <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2">
+                                <CheckCircle className="text-blue-600" size={20}/>
+                                <span className="text-sm text-blue-800 font-medium">سيتم إضافة المعلم إلى: {schools[0].name}</span>
+                            </div>
+                        )}
+                        
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.name || ''} onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})} /></div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">رقم الهوية الوطنية <span className="text-red-500">*</span></label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-mono text-left" dir="ltr" placeholder="10xxxxxxxx" value={newTeacher.nationalId || ''} onChange={(e) => setNewTeacher({...newTeacher, nationalId: e.target.value})} /></div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">فئة المعلم</label><select className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.category} onChange={(e) => setNewTeacher({...newTeacher, category: e.target.value as TeacherCategory})}>{Object.values(TeacherCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                        
+                        <div className="md:col-span-2 bg-purple-50 p-4 rounded-xl border border-purple-100">
+                            <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">
+                                <Shield size={16}/> صلاحيات النظام (System Roles)
+                            </label>
+                            <p className="text-xs text-gray-500 mb-3">اختر الصلاحيات التي يمتلكها هذا الموظف في النظام (يمكن اختيار أكثر من واحدة).</p>
+                            
+                            <div className="flex flex-wrap gap-3">
+                                {[UserRole.TEACHER, UserRole.EVALUATOR, UserRole.PRINCIPAL].map(role => (
+                                    <label key={role} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${selectedRoles.includes(role) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'}`}>
+                                        <input 
+                                            type="checkbox" 
+                                            className="hidden"
+                                            checked={selectedRoles.includes(role)}
+                                            onChange={() => handleRoleToggle(role)}
+                                        />
+                                        {selectedRoles.includes(role) ? <CheckCircle size={16} className="text-white"/> : <span className="w-4 h-4 rounded-full border border-gray-300 bg-gray-50"></span>}
+                                        <span className="text-sm font-medium">{role}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">التخصص</label><input type="text" list="specialties-options" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500" value={newTeacher.specialty || ''} onChange={(e) => setNewTeacher({...newTeacher, specialty: e.target.value})} placeholder="اكتب أو اختر" /><datalist id="specialties-options">{specialtiesList.map(s => <option key={s.id} value={s.name} />)}</datalist></div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">الجوال</label><input type="tel" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-left" dir="ltr" value={newTeacher.mobile || ''} onChange={(e) => setNewTeacher({...newTeacher, mobile: e.target.value})} /></div>
+                    </div>
+                </div>
+                
+                <div className="p-6 bg-gray-50 border-t flex flex-col-reverse sm:flex-row justify-between items-center gap-4 rounded-b-xl sticky bottom-0">
+                    <div className="w-full sm:w-auto">
+                        {editingId && (
+                            <button 
+                                onClick={async () => {
+                                    const success = await handleDeleteTeacher(editingId);
+                                    if (success) {
+                                        setIsTeacherModalOpen(false);
+                                        setEditingId(null);
+                                    }
+                                }} 
+                                className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 transition-colors text-sm font-medium"
+                            >
+                                <Trash2 size={18} /> حذف
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div className="flex gap-2 w-full sm:w-auto justify-end">
+                        <button onClick={() => setIsTeacherModalOpen(false)} className="flex-1 sm:flex-none px-4 py-2 text-gray-600 hover:bg-white rounded-lg border border-transparent hover:border-gray-200">إلغاء</button>
+                        <button onClick={handleSaveTeacher} disabled={isSaving} className="flex-1 sm:flex-none bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm font-bold">
+                            {isSaving && <Loader2 className="animate-spin" size={16} />}
+                            {editingId ? 'حفظ التعديلات' : 'إضافة المعلم'}
+                        </button>
+                    </div>
                 </div>
             </div>
          </div>
       )}
 
-      {/* Import Tab */}
-      {subTab === 'import' && importStep === 'upload' && (
-          <div className="max-w-3xl mx-auto">
+      {/* Specialties Modal */}
+      {isSpecialtyModalOpen && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in max-h-[80vh] flex flex-col">
+                  <div className="flex justify-between items-center p-6 border-b">
+                      <h3 className="text-xl font-bold text-gray-800">إدارة التخصصات</h3>
+                      <button onClick={() => setIsSpecialtyModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                  </div>
+                  <div className="p-6 flex-1 overflow-y-auto">
+                      <div className="flex gap-2 mb-6">
+                          <input type="text" className="border rounded-lg px-3 py-2 text-sm flex-1 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="أدخل اسم التخصص الجديد..." value={newSpecialty} onChange={(e) => setNewSpecialty(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddSpecialty()} />
+                          <button onClick={handleAddSpecialty} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"><Plus size={18} /> إضافة</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                          {specialtiesList.map(spec => (
+                              <div key={spec.id} className="group flex justify-between items-center bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg hover:bg-white hover:shadow-sm transition-all">
+                                  <span className="text-sm text-gray-700">{spec.name}</span>
+                                  <button onClick={() => handleDeleteSpecialty(spec.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                  <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
+                      <button onClick={() => setIsSpecialtyModalOpen(false)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 text-sm font-medium">إغلاق</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* View Teacher Modal */}
+      {viewTeacher && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+                    <div className="flex justify-between items-center p-6 border-b">
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                            <User className="text-primary-600" /> 
+                            {viewTeacher.name}
+                        </h3>
+                        <button onClick={() => setViewTeacher(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                    </div>
+                    <div className="p-6 space-y-4 text-sm">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <label className="text-xs text-gray-500 block mb-1">رقم الهوية</label>
+                                <p className="font-mono font-medium">{viewTeacher.nationalId}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <label className="text-xs text-gray-500 block mb-1">الفئة الوظيفية</label>
+                                <p className="font-medium text-primary-700">{viewTeacher.category}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <label className="text-xs text-gray-500 block mb-1">التخصص</label>
+                                <p className="font-medium">{viewTeacher.specialty}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <label className="text-xs text-gray-500 block mb-1">الصلاحيات</label>
+                                <div className="flex flex-wrap gap-1">
+                                    {viewTeacher.roles && viewTeacher.roles.length > 0 ? (
+                                        viewTeacher.roles.map((r, i) => (
+                                            <span key={i} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">{r}</span>
+                                        ))
+                                    ) : (
+                                        <span className="font-medium">{viewTeacher.role || UserRole.TEACHER}</span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
+                                <p className="font-medium" dir="ltr">{viewTeacher.mobile || '-'}</p>
+                            </div>
+                        </div>
+                        <div className="border-t pt-4">
+                            <label className="text-xs text-gray-500 block mb-2">المدرسة التابع لها</label>
+                            <div className="flex items-center gap-2 font-medium">
+                                <CheckCircle size={16} className="text-green-500"/>
+                                {schools.find(s => s.id === viewTeacher.schoolId)?.name || 'غير محدد'}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
+                        <button onClick={() => setViewTeacher(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
+                    </div>
+                </div>
+            </div>
+      )}
+
+      {/* Import View (kept as separate view for space) */}
+      {viewMode === 'import' && importStep === 'upload' && (
+          <div className="max-w-3xl mx-auto bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+             <div className="flex justify-between items-start mb-6 border-b pb-4">
+                 <h3 className="text-xl font-bold text-gray-800">استيراد المعلمين</h3>
+                 <button onClick={() => setViewMode('list')} className="text-gray-500 hover:text-gray-700 text-sm">عودة للقائمة</button>
+             </div>
+
              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><FileText size={18} /> تعليمات الاستيراد</h4>
                 <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
@@ -904,7 +1012,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                  </select>
              </div>
 
-             <div className={`bg-white p-12 rounded-xl shadow-sm border text-center border-dashed border-2 transition-colors ${!importTargetSchoolId ? 'border-gray-200 opacity-50 cursor-not-allowed' : 'border-gray-300 hover:border-primary-500'}`}>
+             <div className={`bg-white p-12 rounded-xl border text-center border-dashed border-2 transition-colors ${!importTargetSchoolId ? 'border-gray-200 opacity-50 cursor-not-allowed' : 'border-gray-300 hover:border-primary-500'}`}>
                 {isImporting ? (
                     <div className="flex flex-col items-center justify-center py-4">
                         <Loader2 size={48} className="animate-spin text-primary-600 mb-4" />
@@ -937,9 +1045,12 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
           </div>
       )}
       
-      {subTab === 'import' && importStep === 'results' && (
+      {viewMode === 'import' && importStep === 'results' && (
            <div className="space-y-6">
-              <div className="flex justify-end"><button onClick={() => setImportStep('upload')} className="text-primary-600 hover:underline text-sm font-bold">استيراد ملف آخر</button></div>
+              <div className="flex justify-end gap-3">
+                  <button onClick={() => setImportStep('upload')} className="text-primary-600 hover:underline text-sm font-bold">استيراد ملف آخر</button>
+                  <button onClick={() => setViewMode('list')} className="text-gray-500 hover:text-gray-700 text-sm">عودة للقائمة</button>
+              </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-700">النتائج التفصيلية</div>
                 <div className="max-h-96 overflow-y-auto">
@@ -950,26 +1061,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 </div>
              </div>
            </div>
-      )}
-
-      {subTab === 'specialties' && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-700">قائمة التخصصات المعتمدة</h3>
-                  <div className="flex gap-2">
-                      <input type="text" className="border rounded-lg px-3 py-2 text-sm w-64 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="أدخل اسم التخصص الجديد..." value={newSpecialty} onChange={(e) => setNewSpecialty(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddSpecialty()} />
-                      <button onClick={handleAddSpecialty} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"><Plus size={18} /> إضافة</button>
-                  </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {specialtiesList.map(spec => (
-                      <div key={spec.id} className="group flex justify-between items-center bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg hover:bg-white hover:shadow-sm transition-all">
-                          <span className="text-sm text-gray-700">{spec.name}</span>
-                          <button onClick={() => handleDeleteSpecialty(spec.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
-                      </div>
-                  ))}
-              </div>
-          </div>
       )}
     </div>
   );

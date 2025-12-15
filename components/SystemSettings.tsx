@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson, Lock, AlertOctagon } from 'lucide-react';
+import { Database, Copy, AlertTriangle, Check, Layers, Users, CreditCard, Shield, Plus, Trash2, RefreshCw, Search, Loader2, Calendar, DollarSign, X, Edit2, Download, UploadCloud, FileJson, Lock, AlertOctagon, MoreHorizontal } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole, SystemUser, Subscription, School } from '../types';
 
@@ -20,13 +20,13 @@ export default function SystemSettings() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
 
-  // User Forms State
+  // User Modal State
   const [newUser, setNewUser] = useState<Partial<SystemUser>>({ role: UserRole.TEACHER });
-  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
-  // Subscription Forms State
-  const [isAddingSub, setIsAddingSub] = useState(false);
+  // Subscription Modal State
+  const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [newSub, setNewSub] = useState<{
       school_id: string;
@@ -57,28 +57,21 @@ export default function SystemSettings() {
     }
   };
 
-  // SQL Script - Updated with EDUCATION OFFICE and ACADEMIC YEAR
-  const fullSchemaScript = `
+  // SQL Script
+  const fullSchemaScriptActual = `
 -- ==========================================
 -- 1. تحديث هيكلية تعدد الصلاحيات (سجل واحد، أدوار متعددة)
 -- ==========================================
 
--- إضافة عمود المصفوفة للأدوار في جدول المعلمين إذا لم يكن موجوداً
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] DEFAULT '{}';
-
--- إضافة عمود رقم هوية المدير لجدول المدارس
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS manager_national_id text;
-
--- إضافة أعمدة إدارة التعليم والعام الدراسي لجدول المدارس
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS education_office text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS academic_year text;
 
--- نقل البيانات القديمة (role وحيد) إلى المصفوفة الجديدة
 UPDATE teachers 
 SET roles = array_append(roles, role) 
 WHERE role IS NOT NULL AND (roles IS NULL OR roles = '{}' OR NOT (roles @> ARRAY[role]));
 
--- إعادة قيد التفرد: رقم الهوية يجب أن يكون فريداً لكل مدرسة (سجل واحد فقط لكل معلم في المدرسة)
 ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_national_id_key;
 DROP INDEX IF EXISTS idx_teachers_national_id_school_id_role; 
 DROP INDEX IF EXISTS idx_teachers_national_id_school_id;
@@ -86,23 +79,12 @@ DROP INDEX IF EXISTS idx_teachers_national_id_school_id;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_teachers_national_id_school_id 
 ON teachers (national_id, school_id);
 
--- للمستخدمين (المدراء): إبقاء الوضع كما هو (بريد فريد للمدرسة)
 ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_email_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_email_school_id 
 ON app_users (email, school_id);
 
--- ==========================================
--- 2. تخصيص الأحداث لكل مدرسة
--- ==========================================
-
--- إضافة عمود المدرسة لجدول الأحداث
 ALTER TABLE school_events ADD COLUMN IF NOT EXISTS school_id uuid REFERENCES schools(id) ON DELETE CASCADE;
 
--- ==========================================
--- 3. بنك الملاحظات والعبارات (جديد)
--- ==========================================
-
--- تحديث الجدول لإضافة فئة 'aspiration'
 create table if not exists feedback_bank (
   id uuid default gen_random_uuid() primary key,
   category text, 
@@ -111,302 +93,12 @@ create table if not exists feedback_bank (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- تحديث القيد ليشمل الفئة الجديدة
 ALTER TABLE feedback_bank DROP CONSTRAINT IF EXISTS feedback_bank_category_check;
 ALTER TABLE feedback_bank ADD CONSTRAINT feedback_bank_category_check CHECK (category IN ('strength', 'improvement', 'action', 'aspiration'));
-
--- حذف البيانات القديمة (اختياري، لضمان نظافة البيانات عند التحديث)
-DELETE FROM feedback_bank;
-
--- إضافة البيانات التربوية المتخصصة (11 معيار + تطلعات للمتميزين)
-INSERT INTO feedback_bank (category, tags, phrase_text) VALUES
--- 1. أداء الواجبات (انضباط، لوائح)
-('strength', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'نموذج يُحتذى به في الانضباط الوظيفي والالتزام باللوائح، ويظهر وعياً تاماً بمسؤولياته الإدارية والتربوية.'),
-('improvement', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'ضعف في الالتزام ببعض الضوابط التنظيمية (مثل الحضور أو المناوبة) أو اللوائح المدرسية.'),
-('action', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'الاطلاع الدقيق على "مدونة السلوك الوظيفي" والالتزام بجدول الدوام والمناوبة بدقة تامة.'),
-('aspiration', ARRAY['انضباط', 'واجبات', 'لوائح', 'سلوك'], 'تكليفه بمهام قيادية (مثل الإشراف) ليكون قدوة لزملائه في الانضباط المؤسسي.'),
-
--- 2. القيم الوطنية
-('strength', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'نموذج يُحتذى به في غرس القيم الوطنية، ويظهر ذلك جلياً في ربط الدروس بالهوية الوطنية والمناسبات الرسمية.'),
-('improvement', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'غياب الربط بين المادة العلمية والقيم الوطنية، وضعف تعزيز روح الانتماء لدى الطلاب.'),
-('action', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'تخصيص 5 دقائق أسبوعياً أو تضمين نشاط واحد يربط موضوع الدرس بقيمة وطنية أو منجز وطني.'),
-('aspiration', ARRAY['وطنية', 'انتماء', 'هوية', 'قيم'], 'قيادة مبادرات مدرسية تعزز الهوية الوطنية والمواطنة المسؤولة على مستوى المدرسة.'),
-
--- 3. سرية البيانات
-('strength', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'نموذج يُحتذى به في الأمانة المهنية، ويظهر حرصاً شديداً على سرية بيانات الطلاب وعدم تداولها إلا في النطاق المصرح به.'),
-('improvement', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'التهاون في تداول درجات الطلاب أو معلوماتهم الخاصة في أماكن عامة أو غير مخصصة.'),
-('action', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'الالتزام التام بسياسة "خصوصية البيانات" وعدم مناقشة شؤون الطلاب إلا مع المعنيين (المرشد/الإدارة).'),
-('aspiration', ARRAY['سرية', 'بيانات', 'خصوصية', 'أمانة'], 'إعداد ورشة عمل للزملاء حول أخلاقيات المهنة وسرية المعلومات.'),
-
--- 4. التطوير المهني (مجتمع مهني)
-('strength', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'نموذج يُحتذى به في الشغف بالتطوير الذاتي، ويحرص باستمرار على حضور اللقاءات التربوية ونقل أثرها للزملاء.'),
-('improvement', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'الاكتفاء بالحد الأدنى من الأداء وعدم المشاركة في برامج التطوير المهني المتاحة.'),
-('action', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'التسجيل في دورة تدريبية تخصصية واحدة على الأقل هذا الفصل، وتقديم تقرير عما تم تعلمه.'),
-('aspiration', ARRAY['تطوير', 'نمو', 'مجتمع مهني', 'دورات'], 'قيادة مجتمعات التعلم المهنية (PLC) بالمدرسة وتقديم دورات تدريبية للزملاء.'),
-
--- 5. التعاون (PLC)
-('strength', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'نموذج يُحتذى به في العمل بروح الفريق، ويظهر مبادرة عالية في دعم الزملاء ومشاركة المصادر التعليمية.'),
-('improvement', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'الانعزال المهني وقلة المشاركة في فرق العمل أو تبادل الزيارات الفنية.'),
-('action', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'المشاركة الفعالة في "مجتمعات التعلم المهنية" وتنفيذ درس تطبيقي أو زيارة تبادلية لزميل.'),
-('aspiration', ARRAY['تعاون', 'زملاء', 'فريق', 'تبادل'], 'تأسيس بنك أسئلة أو موارد تعليمية مشتركة يستفيد منها معلمو التخصص في القطاع.'),
-
--- 6. التواصل مع أولياء الأمور
-('strength', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'نموذج يُحتذى به في بناء شراكة إيجابية مع أولياء الأمور، ويظهر مهارة عالية في التواصل واحتواء الملاحظات بمهنية.'),
-('improvement', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'ضعف قنوات التواصل مع الأسرة، أو الاقتصار على التواصل السلبي عند وجود مشكلات فقط.'),
-('action', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'تفعيل سجل التواصل الدوري لإطلاع ولي الأمر على مستوى الطالب (الإيجابي والسلبي) بانتظام.'),
-('aspiration', ARRAY['أولياء', 'أسرة', 'تواصل', 'مجتمع'], 'تقديم ندوة أو لقاء لأولياء الأمور حول "دور الأسرة في رفع التحصيل الدراسي".'),
-
--- 7. استراتيجيات التدريس
-('strength', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'نموذج يُحتذى به في اختيار وتكييف استراتيجيات التدريس، ويظهر تمكناً في جعل الطالب محور العملية التعليمية.'),
-('improvement', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'الاعتماد النمطي على طريقة واحدة (غالباً الإلقاء) وعدم تكييف التدريس حسب طبيعة الدرس.'),
-('action', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'الاطلاع على حقيبة "استراتيجيات التدريس النشط" وتطبيق استراتيجية مختلفة لكل وحدة دراسية.'),
-('aspiration', ARRAY['استراتيجيات', 'تدريس', 'طرق', 'نشط'], 'تنفيذ "درس تطبيقي" نموذجي على مستوى المكتب التعليمي لنقل خبرات التدريس النشط.'),
-
--- 8. الفروق الفردية
-('strength', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'نموذج يُحتذى به في التعليم المتمايز، ويظهر اهتماماً بجميع فئات الطلاب (الموهوب، المتوسط، المتعثر).'),
-('improvement', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'التدريس موجه لمستوى واحد فقط مع إهمال الفروق الفردية بين الطلاب.'),
-('action', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'تصميم أنشطة متدرجة الصعوبة في ورقة العمل الواحدة لتناسب جميع المستويات.'),
-('aspiration', ARRAY['فروق', 'فردية', 'تمايز', 'ميول'], 'تصميم خطط إثرائية للموهوبين وخطط علاجية للمتعثرين واعتمادها كنموذج للمدرسة.'),
-
--- 9. التفكير والإبداع
-('strength', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'نموذج يُحتذى به في إثارة الذهن، ويظهر براعة في استخدام أسئلة التفكير العليا وحل المشكلات.'),
-('improvement', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'التركيز المنصب على مهارات الحفظ والتذكر الدنيا، وإهمال مهارات التحليل والابتكار.'),
-('action', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'صياغة سؤالين على الأقل في كل حصة يستهدفان "مهارات التفكير العليا" وإتاحة الفرصة للطلاب للإجابة.'),
-('aspiration', ARRAY['تفكير', 'إبداع', 'ناقد', 'حل مشكلات'], 'المشاركة بطلاب في مسابقات الإبداع العلمي والموهبة على مستوى الإدارة.'),
-
--- 10. التغذية الراجعة
-('strength', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'نموذج يُحتذى به في تقديم التغذية الراجعة النوعية، ويظهر دقة في توجيه الطلاب لتصحيح مسار تعلمهم فورياً.'),
-('improvement', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'التغذية الراجعة عامة (مثل: أحسنت/راجِع) ولا توضح للطالب نقاط القوة والضعف بدقة.'),
-('action', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'تقديم تغذية راجعة مكتوبة ومفصلة على أعمال الطلاب توضح "ماذا أجاد" و"ماذا يحتاج للتطوير".'),
-('aspiration', ARRAY['تغذية', 'راجعة', 'تعزيز', 'تحفيز'], 'بناء أدوات تقويم ذاتي للطلاب تمكنهم من تقييم أعمالهم بأنفسهم.'),
-
--- 11. التخطيط والإعداد
-('strength', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'نموذج يُحتذى به في التخطيط المتقن، ويظهر توافقاً تاماً وتسلسلاً منطقياً بين الأهداف والأنشطة والتقويم.'),
-('improvement', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'الإعداد الكتابي شكلي، أو وجود فجوة كبيرة بين ما هو مكتوب في الخطة وما ينفذ داخل الصف.'),
-('action', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'إعداد الدروس وفق عناصر "الدليل التنظيمي"، والتأكد من تطابق الأهداف مع الأنشطة الزمنية.'),
-('aspiration', ARRAY['تخطيط', 'إعداد', 'خطة', 'أهداف'], 'تدريب المعلمين الجدد على مهارات التخطيط للتدريس وصياغة الأهداف الذكية.'),
-
--- 12. التقنية والوسائل
-('strength', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'نموذج يُحتذى به في الرقمنة التعليمية، ويظهر ابتكاراً في توظيف التطبيقات والمنصات لخدمة أهداف الدرس.'),
-('improvement', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'غياب استخدام الوسائل التعليمية أو التقنية، والاعتماد الكلي على الكتاب المدرسي والسبورة فقط.'),
-('action', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'تفعيل أدوات "منصة مدرستي" أو استخدام تطبيق تفاعلي واحد (مثل Kahoot) لكسر الجمود وزيادة التفاعل.'),
-('aspiration', ARRAY['تقنية', 'وسائل', 'رقمي', 'تكنولوجيا'], 'إنتاج محتوى رقمي تفاعلي (فيديو/تطبيق) ونشره في بنك الإثراءات بوزارة التعليم.'),
-
--- 13. البيئة الصفية
-('strength', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'نموذج يُحتذى به في توفير بيئة صفية جاذبة وآمنة نفسياً، ويظهر علاقة إيجابية يسودها الاحترام مع الطلاب.'),
-('improvement', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'البيئة الصفية يسودها التوتر أو الخمول، وضعف التواصل الإيجابي المشجع مع الطلاب.'),
-('action', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'استخدام عبارات التعزيز الإيجابي المتنوعة، والحرص على العدالة في التعامل مع جميع الطلاب.'),
-('aspiration', ARRAY['بيئة', 'صفية', 'جاذبة', 'أمان'], 'تصميم مبادرات لتعزيز السلوك الإيجابي على مستوى المدرسة.'),
-
--- 14. الإدارة الصفية
-('strength', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'نموذج يُحتذى به في القيادة الصفية، ويظهر حزماً تربوياً ومرونة تضمن استثمار كل دقيقة في التعلم.'),
-('improvement', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'وجود فوضى في الفصل أو هدر للوقت التعليمي في أمور إدارية وسلوكية بسبب ضعف السيطرة.'),
-('action', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'وضع "ميثاق للفصل" بالاتفاق مع الطلاب وتطبيقه بحزم وعدالة منذ الدقيقة الأولى للحصة.'),
-('aspiration', ARRAY['إدارة', 'صفية', 'ضبط', 'وقت'], 'نقل خبراته في إدارة الصفوف ذات الكثافة العالية للزملاء عبر الزيارات التبادلية.'),
-
--- 15. تحليل النتائج
-('strength', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'نموذج يُحتذى به في قراءة المؤشرات الرقمية، ويظهر مهارة في تحويل نتائج الاختبارات إلى خطط علاجية واقعية.'),
-('improvement', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'الاكتفاء برصد الدرجات دون تحليل، وعدم معرفة المهارات التي أخفق فيها الطلاب.'),
-('action', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'تحليل نتائج الاختبارات القصيرة وتحديد "المهارات المفقودة" لإعادة تدريسها بطريقة مختلفة.'),
-('aspiration', ARRAY['تحليل', 'نتائج', 'بيانات', 'تشخيص'], 'إعداد دراسة مقارنة لنتائج الطلاب وتقديم توصيات تطويرية لإدارة المدرسة.'),
-
--- 16. تنوع التقويم
-('strength', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'نموذج يُحتذى به في العدالة والشمولية، ويظهر تنوعاً في أدوات القياس (شفهي، تحريري، أدائي، مشاريع).'),
-('improvement', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'الاعتماد الحصري على الاختبارات التحريرية كأداة وحيدة للتقييم وإهمال الجوانب المهارية والوجدانية.'),
-('action', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'تفعيل "ملف الإنجاز" و"المهام الأدائية" كجزء أساسي من عملية تقييم الطالب.'),
-('aspiration', ARRAY['تقويم', 'قياس', 'اختبارات', 'أدوات'], 'بناء اختبارات معيارية تحاكي الاختبارات الدولية والوطنية وتدريب الطلاب عليها.');
-
--- ==========================================
--- 4. إصلاح مشاكل الحذف (Constraints Fixes)
--- ==========================================
-
--- إصلاح علاقة التقييمات بالمعلمين (حذف التقييم عند حذف المعلم)
-ALTER TABLE evaluations DROP CONSTRAINT IF EXISTS evaluations_teacher_id_fkey;
-ALTER TABLE evaluations ADD CONSTRAINT evaluations_teacher_id_fkey 
-    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE;
-
--- إصلاح علاقة التقييمات بالمدرسة
-ALTER TABLE evaluations DROP CONSTRAINT IF EXISTS evaluations_school_id_fkey;
-ALTER TABLE evaluations ADD CONSTRAINT evaluations_school_id_fkey 
-    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
-
--- إصلاح علاقة المعلمين بالمدرسة
-ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_school_id_fkey;
-ALTER TABLE teachers ADD CONSTRAINT teachers_school_id_fkey 
-    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
-
--- إصلاح علاقة المستخدمين بالمدرسة
-ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_school_id_fkey;
-ALTER TABLE app_users ADD CONSTRAINT app_users_school_id_fkey 
-    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL;
-
--- إصلاح علاقة الاشتراكات بالمدرسة
-ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_school_id_fkey;
-ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_school_id_fkey 
-    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
-
--- ==========================================
--- 5. التأكد من هيكلية الجداول الأساسية
--- ==========================================
-
-create table if not exists schools (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  stage text,
-  type text,
-  ministry_id text,
-  education_office text,
-  academic_year text,
-  manager_name text,
-  manager_national_id text,
-  evaluator_name text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists teachers (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  national_id text, 
-  specialty text,
-  category text, 
-  role text default 'المعلم',
-  roles text[] default '{}', 
-  mobile text,
-  password text,
-  school_id uuid references schools(id) on delete set null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists app_users (
-  id uuid default gen_random_uuid() primary key,
-  email text not null,
-  full_name text not null,
-  password text,
-  role text not null,
-  school_id uuid references schools(id) on delete set null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists subscriptions (
-  id uuid default gen_random_uuid() primary key,
-  school_id uuid references schools(id) on delete cascade,
-  plan_name text default 'Basic',
-  start_date date,
-  end_date date,
-  status text default 'active',
-  price numeric default 0,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists evaluation_indicators (
-  id uuid default gen_random_uuid() primary key,
-  text text not null,
-  weight numeric default 0,
-  description text,
-  sort_order integer default 0,
-  rubric jsonb default '{}'::jsonb,
-  applicable_categories text[],
-  category_weights jsonb,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists evaluation_criteria (
-  id uuid default gen_random_uuid() primary key,
-  indicator_id uuid references evaluation_indicators(id) on delete cascade,
-  text text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists verification_indicators (
-  id uuid default gen_random_uuid() primary key,
-  indicator_id uuid references evaluation_indicators(id) on delete cascade,
-  text text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists evaluations (
-  id uuid default gen_random_uuid() primary key,
-  teacher_id uuid references teachers(id) on delete cascade,
-  school_id uuid references schools(id) on delete set null,
-  period_name text,
-  eval_date date,
-  scores jsonb default '{}'::jsonb,
-  total_score numeric default 0,
-  general_notes text,
-  status text default 'draft',
-  objection_text text,
-  objection_status text default 'none',
-  teacher_evidence_links jsonb default '[]'::jsonb,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists teacher_evidence (
-  id uuid default gen_random_uuid() primary key,
-  teacher_id uuid references teachers(id) on delete cascade,
-  indicator_id uuid references evaluation_indicators(id) on delete cascade,
-  url text not null,
-  description text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists specialties (
-  id uuid default gen_random_uuid() primary key,
-  name text unique not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists school_events (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  type text default 'evaluation', 
-  start_date date not null,
-  end_date date not null,
-  status text default 'upcoming',
-  description text,
-  school_id uuid references schools(id) on delete cascade,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- اضافة الاعمدة الناقصة ان وجدت
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS school_id uuid references schools(id) on delete set null;
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_text text;
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS objection_status text default 'none';
-ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_evidence_links jsonb default '[]'::jsonb;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS password text;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS role text default 'المعلم';
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] default '{}';
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password text;
-
--- ==========================================
--- 6. تحديث سياسات الأمان (RLS)
--- ==========================================
-
--- تفعيل RLS لجميع الجداول
-alter table schools enable row level security;
-alter table app_users enable row level security;
-alter table subscriptions enable row level security;
-alter table specialties enable row level security;
-alter table school_events enable row level security;
-alter table evaluations enable row level security;
-alter table teacher_evidence enable row level security;
-alter table feedback_bank enable row level security;
-
--- حذف السياسات القديمة وإنشاء سياسات عامة (للتسهيل في النسخة الحالية)
-drop policy if exists "Public Access" on schools; create policy "Public Access" on schools for all using (true);
-drop policy if exists "Public Access" on app_users; create policy "Public Access" on app_users for all using (true);
-drop policy if exists "Public Access" on subscriptions; create policy "Public Access" on subscriptions for all using (true);
-drop policy if exists "Public Access" on specialties; create policy "Public Access" on specialties for all using (true);
-drop policy if exists "Public Access" on school_events; create policy "Public Access" on school_events for all using (true);
-drop policy if exists "Public Access" on evaluations; create policy "Public Access" on evaluations for all using (true);
-drop policy if exists "Public Access" on teacher_evidence; create policy "Public Access" on teacher_evidence for all using (true);
-drop policy if exists "Public Access" on feedback_bank; create policy "Public Access" on feedback_bank for all using (true);
-
-NOTIFY pgrst, 'reload schema';
 `;
 
   useEffect(() => {
-    fetchSchools(); // Always fetch schools as they are needed for dropdowns in both tabs
+    fetchSchools(); 
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'subscriptions') fetchSubscriptions();
   }, [activeTab]);
@@ -456,56 +148,27 @@ NOTIFY pgrst, 'reload schema';
     }
   };
 
-  // --- Backup & Restore Handlers ---
+  // --- Handlers ---
   const handleExportBackup = async () => {
       setIsBackingUp(true);
       try {
-          const tables = [
-              'schools',
-              'specialties',
-              'evaluation_indicators',
-              'evaluation_criteria',
-              'verification_indicators',
-              'school_events',
-              'teachers',
-              'app_users',
-              'evaluations',
-              'teacher_evidence', // Include new table
-              'subscriptions',
-              'feedback_bank' // Include new table
-          ];
-          
-          const backupData: any = {
-              timestamp: new Date().toISOString(),
-              version: '1.0',
-              data: {}
-          };
-
+          const tables = ['schools', 'specialties', 'evaluation_indicators', 'evaluation_criteria', 'verification_indicators', 'school_events', 'teachers', 'app_users', 'evaluations', 'teacher_evidence', 'subscriptions', 'feedback_bank'];
+          const backupData: any = { timestamp: new Date().toISOString(), version: '1.0', data: {} };
           for (const table of tables) {
-              const { data, error } = await supabase.from(table).select('*');
-              if (error) {
-                  // Ignore missing tables, log warning
-                  console.warn(`Could not backup table ${table}:`, error.message);
-                  continue;
-              }
+              const { data } = await supabase.from(table).select('*');
               backupData.data[table] = data || [];
           }
-
-          // Trigger Download
           const jsonString = JSON.stringify(backupData, null, 2);
           const blob = new Blob([jsonString], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
-          
           const link = document.createElement('a');
           link.href = url;
           link.download = `nizam_taqyeem_backup_${new Date().toISOString().split('T')[0]}.json`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          
           alert('تم تصدير النسخة الاحتياطية بنجاح.');
       } catch (error) {
-          console.error(error);
           alert('حدث خطأ أثناء النسخ الاحتياطي: ' + getErrorMessage(error));
       } finally {
           setIsBackingUp(false);
@@ -515,257 +178,122 @@ NOTIFY pgrst, 'reload schema';
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      if (!window.confirm('تنبيه: استعادة البيانات ستقوم بتحديث البيانات الموجودة أو إضافة بيانات جديدة. هل أنت متأكد من المتابعة؟')) {
+      if (!window.confirm('تنبيه: استعادة البيانات ستقوم بتحديث البيانات الموجودة. هل أنت متأكد؟')) {
           if (fileInputRef.current) fileInputRef.current.value = '';
           return;
       }
-
       setIsRestoring(true);
       const reader = new FileReader();
-      
       reader.onload = async (event) => {
           try {
               const jsonContent = event.target?.result as string;
               const backup = JSON.parse(jsonContent);
-
-              if (!backup.data || typeof backup.data !== 'object') {
-                  throw new Error('ملف النسخ الاحتياطي غير صالح');
-              }
-
-              // Order is crucial for Foreign Keys
-              // Parents first, then children
-              const tablesOrder = [
-                  'schools',
-                  'specialties',
-                  'evaluation_indicators', // Parents of criteria
-                  'evaluation_criteria',
-                  'verification_indicators',
-                  'school_events',
-                  'teachers', // Depends on schools
-                  'app_users', // Depends on schools
-                  'evaluations', // Depends on teachers & schools
-                  'teacher_evidence', // Depends on teachers & indicators
-                  'subscriptions', // Depends on schools
-                  'feedback_bank'
-              ];
-
+              if (!backup.data) throw new Error('ملف غير صالح');
+              const tablesOrder = ['schools', 'specialties', 'evaluation_indicators', 'evaluation_criteria', 'verification_indicators', 'school_events', 'teachers', 'app_users', 'evaluations', 'teacher_evidence', 'subscriptions', 'feedback_bank'];
               for (const table of tablesOrder) {
                   const rows = backup.data[table];
-                  if (rows && Array.isArray(rows) && rows.length > 0) {
-                      const { error } = await supabase.from(table).upsert(rows);
-                      if (error) {
-                          console.error(`Error restoring ${table}:`, error);
-                          throw new Error(`فشل استعادة جدول ${table}: ${error.message}`);
-                      }
-                  }
+                  if (rows && rows.length > 0) await supabase.from(table).upsert(rows);
               }
-
               alert('تم استعادة البيانات بنجاح!');
-              // Refresh current view
-              fetchSchools();
-              if (activeTab === 'users') fetchUsers();
-              if (activeTab === 'subscriptions') fetchSubscriptions();
-
+              fetchSchools(); if (activeTab === 'users') fetchUsers(); if (activeTab === 'subscriptions') fetchSubscriptions();
           } catch (error) {
-              console.error(error);
               alert('فشل استعادة البيانات: ' + getErrorMessage(error));
           } finally {
               setIsRestoring(false);
               if (fileInputRef.current) fileInputRef.current.value = '';
           }
       };
-
       reader.readAsText(file);
   };
 
-  // --- Factory Reset Handler ---
   const handleFactoryReset = async () => {
-      const confirmMsg = prompt('تحذير شديد: هذا الإجراء سيقوم بحذف جميع البيانات التشغيلية بما في ذلك:\n- المدارس\n- المعلمين\n- المستخدمين\n- التقييمات\n- الاشتراكات\n\nللتأكيد النهائي، يرجى كتابة عبارة "حذف الكل" في المربع أدناه:');
-      
-      if (confirmMsg !== 'حذف الكل') {
-          if (confirmMsg !== null) alert('لم يتم الحذف. العبارة المدخلة غير صحيحة.');
-          return;
-      }
-
+      if (prompt('للتأكيد، اكتب "حذف الكل":') !== 'حذف الكل') return;
       setIsResetting(true);
       try {
-          // Delete tables in correct order (Children first to respect Foreign Keys)
-          // Using .neq('id', '0000...') is a Supabase trick to delete all rows as 'id' is distinct from a dummy value
           const dummyUUID = '00000000-0000-0000-0000-000000000000';
-
-          // 1. Evidence (Deepest child)
           await supabase.from('teacher_evidence').delete().neq('id', dummyUUID);
-          
-          // 2. Evaluations
           await supabase.from('evaluations').delete().neq('id', dummyUUID);
-          
-          // 3. School Events
           await supabase.from('school_events').delete().neq('id', dummyUUID);
-          
-          // 4. Subscriptions
           await supabase.from('subscriptions').delete().neq('id', dummyUUID);
-          
-          // 5. Users (Admins/Principals in app_users)
-          // Note: This effectively logs out the current user if they are in this table
           await supabase.from('app_users').delete().neq('id', dummyUUID);
-          
-          // 6. Teachers (Includes Principals with Teacher role)
           await supabase.from('teachers').delete().neq('id', dummyUUID);
-          
-          // 7. Schools (Parent)
           await supabase.from('schools').delete().neq('id', dummyUUID);
-
-          alert('تم تصفية النظام بنجاح. سيتم إعادة تحميل الصفحة.');
+          alert('تم تصفية النظام بنجاح.');
           window.location.reload();
-
-      } catch (error: any) {
-          console.error("Factory Reset Error:", error);
-          alert('حدث خطأ أثناء التصفية: ' + getErrorMessage(error));
+      } catch (error) {
+          alert('خطأ: ' + getErrorMessage(error));
       } finally {
           setIsResetting(false);
       }
   };
 
-  // --- User Handlers ---
+  const handleOpenAddUser = () => {
+      setEditingUserId(null);
+      setNewUser({ role: UserRole.TEACHER });
+      setIsUserModalOpen(true);
+  };
+
   const handleEditUser = (user: SystemUser) => {
-      setNewUser({
-          email: user.email,
-          full_name: user.full_name,
-          role: user.role,
-          password: user.password,
-          school_id: user.school_id
-      });
+      setNewUser({ email: user.email, full_name: user.full_name, role: user.role, password: user.password, school_id: user.school_id });
       setEditingUserId(user.id);
-      setIsAddingUser(true);
+      setIsUserModalOpen(true);
   };
 
   const handleSaveUser = async () => {
-    if (!newUser.email || !newUser.full_name) return alert('الرجاء تعبئة البيانات الأساسية');
-    
-    // Validate school selection for roles that require it
-    if ((newUser.role === UserRole.PRINCIPAL || newUser.role === UserRole.TEACHER || newUser.role === UserRole.EVALUATOR) && !newUser.school_id) {
-        return alert('يجب تحديد المدرسة لهذه الصلاحية');
-    }
-
+    if (!newUser.email || !newUser.full_name) return alert('البيانات ناقصة');
     try {
-        if (editingUserId) {
-            // Update
-            const { error } = await supabase.from('app_users').update(newUser).eq('id', editingUserId);
-            if (error) throw error;
-        } else {
-            // Insert
-            const { error } = await supabase.from('app_users').insert([newUser]);
-            if (error) throw error;
-        }
-        
+        if (editingUserId) await supabase.from('app_users').update(newUser).eq('id', editingUserId);
+        else await supabase.from('app_users').insert([newUser]);
         await fetchUsers();
-        setIsAddingUser(false);
+        setIsUserModalOpen(false);
         setEditingUserId(null);
         setNewUser({ role: UserRole.TEACHER });
-    } catch (error: any) {
-        if (error?.code === '23505') {
-            alert('هذا المستخدم مسجل بالفعل. لا يمكن تكرار البريد الإلكتروني في نفس المدرسة.');
-        } else {
-            alert('حدث خطأ: ' + getErrorMessage(error));
-        }
-    }
+    } catch (error) { alert('خطأ: ' + getErrorMessage(error)); }
   };
 
-  const handleDeleteUser = async (id: string): Promise<boolean> => {
-    if(!window.confirm('هل أنت متأكد تماماً من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.')) return false;
-    
-    try {
-        const { error } = await supabase.from('app_users').delete().eq('id', id);
-        
-        if(error) {
-            throw error;
-        }
-        
-        setSystemUsers(prev => prev.filter(u => u.id !== id));
-        alert('تم حذف المستخدم بنجاح.');
-        return true;
-        
-    } catch (error: any) {
-        console.error(error);
-        alert('فشل عملية الحذف: ' + getErrorMessage(error));
-        return false;
-    }
+  const handleDeleteUser = async (id: string) => {
+    if(!confirm('حذف المستخدم؟')) return;
+    await supabase.from('app_users').delete().eq('id', id);
+    setSystemUsers(prev => prev.filter(u => u.id !== id));
   };
 
-  // --- Subscription Handlers ---
+  const handleOpenAddSub = () => {
+      setEditingSubId(null);
+      setIsSubModalOpen(true);
+  };
+
   const handleEditSubscription = (sub: Subscription) => {
-    setNewSub({
-        school_id: sub.school_id,
-        plan_name: sub.plan_name,
-        start_date: sub.start_date,
-        end_date: sub.end_date,
-        price: sub.price
-    });
+    setNewSub({ school_id: sub.school_id, plan_name: sub.plan_name, start_date: sub.start_date, end_date: sub.end_date, price: sub.price });
     setEditingSubId(sub.id);
-    setIsAddingSub(true);
+    setIsSubModalOpen(true);
   };
 
   const handleSaveSubscription = async () => {
-      if (!newSub.school_id) return alert('يرجى اختيار المدرسة');
-      
+      if (!newSub.school_id) return alert('اختر المدرسة');
       try {
-          const payload = {
-            school_id: newSub.school_id,
-            plan_name: newSub.plan_name,
-            start_date: newSub.start_date,
-            end_date: newSub.end_date,
-            price: newSub.price,
-            status: 'active'
-          };
-
-          if (editingSubId) {
-             const { error } = await supabase.from('subscriptions').update(payload).eq('id', editingSubId);
-             if (error) throw error;
-          } else {
-             const { error } = await supabase.from('subscriptions').insert([payload]);
-             if (error) throw error;
-          }
-          
+          const payload = { ...newSub, status: 'active' };
+          if (editingSubId) await supabase.from('subscriptions').update(payload).eq('id', editingSubId);
+          else await supabase.from('subscriptions').insert([payload]);
           await fetchSubscriptions();
-          setIsAddingSub(false);
+          setIsSubModalOpen(false);
           setEditingSubId(null);
-          setNewSub({
-            school_id: '',
-            plan_name: 'Basic',
-            start_date: new Date().toISOString().split('T')[0],
-            end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-            price: 0
-          });
-      } catch (error: any) {
-          alert('حدث خطأ: ' + getErrorMessage(error));
-      }
+      } catch (error) { alert('خطأ: ' + getErrorMessage(error)); }
   };
 
-  const handleDeleteSubscription = async (id: string): Promise<boolean> => {
-      if(!window.confirm('هل أنت متأكد من إلغاء وحذف هذا الاشتراك؟')) return false;
-      try {
-          const { error } = await supabase.from('subscriptions').delete().eq('id', id);
-          if(error) throw error;
-          
-          setSubscriptions(prev => prev.filter(s => s.id !== id));
-          alert('تم حذف الاشتراك بنجاح.');
-          return true;
-      } catch(error) {
-          console.error(error);
-          alert('فشل عملية الحذف: ' + getErrorMessage(error));
-          return false;
-      }
+  const handleDeleteSubscription = async (id: string) => {
+      if(!confirm('حذف الاشتراك؟')) return;
+      await supabase.from('subscriptions').delete().eq('id', id);
+      setSubscriptions(prev => prev.filter(s => s.id !== id));
   };
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(fullSchemaScript);
+    navigator.clipboard.writeText(fullSchemaScriptActual);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
+    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-20">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
            <Layers className="text-primary-600" />
            إعدادات النظام
@@ -773,22 +301,13 @@ NOTIFY pgrst, 'reload schema';
 
         {/* Tabs */}
         <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
-            <button 
-                onClick={() => setActiveTab('users')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'users' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
-                <Users size={16} /> المستخدمين والصلاحيات
+            <button onClick={() => setActiveTab('users')} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'users' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
+                <Users size={16} /> المستخدمين
             </button>
-            <button 
-                onClick={() => setActiveTab('subscriptions')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'subscriptions' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
+            <button onClick={() => setActiveTab('subscriptions')} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'subscriptions' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
                 <CreditCard size={16} /> الاشتراكات
             </button>
-            <button 
-                onClick={() => setActiveTab('database')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'database' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
+            <button onClick={() => setActiveTab('database')} className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'database' ? 'bg-primary-50 text-primary-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
                 <Database size={16} /> قاعدة البيانات
             </button>
         </div>
@@ -797,151 +316,70 @@ NOTIFY pgrst, 'reload schema';
         {activeTab === 'users' && (
             <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-lg text-gray-700">قائمة مستخدمي النظام</h3>
-                    <button 
-                        onClick={() => {
-                            setEditingUserId(null);
-                            setNewUser({ role: UserRole.TEACHER });
-                            setIsAddingUser(!isAddingUser);
-                        }} 
-                        className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-primary-700"
-                    >
-                        {isAddingUser ? <X size={16} /> : <Plus size={16} />}
-                        {isAddingUser ? 'إلغاء' : 'إضافة مستخدم'}
+                    <h3 className="font-bold text-lg text-gray-700">المستخدمين</h3>
+                    <button onClick={handleOpenAddUser} className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-primary-700 font-bold shadow-sm">
+                        <Plus size={16} /> مستخدم جديد
                     </button>
                 </div>
 
-                {isAddingUser && (
-                    <div className="bg-white p-6 rounded-xl border border-primary-100 shadow-sm animate-fade-in">
-                        <h4 className="font-bold mb-4 text-sm text-primary-800">
-                            {editingUserId ? 'تعديل بيانات المستخدم' : 'بيانات المستخدم الجديد'}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">الاسم الكامل</label>
-                                <input 
-                                    type="text" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-                                    value={newUser.full_name || ''} onChange={e => setNewUser({...newUser, full_name: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">البريد الإلكتروني</label>
-                                <input 
-                                    type="email" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-                                    value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">كلمة المرور (الرقم السري)</label>
-                                <input 
-                                    type="text" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-                                    placeholder="اتركه فارغاً للإبقاء على القديمة"
-                                    value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">الصلاحية</label>
-                                <select 
-                                    className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none bg-white"
-                                    value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}
-                                >
-                                    {Object.values(UserRole).map(role => (
-                                        <option key={role} value={role}>{role}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">المدرسة</label>
-                                <select 
-                                    className={`w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none bg-white ${
-                                        (newUser.role !== UserRole.ADMIN && !newUser.school_id) ? 'border-red-300 ring-2 ring-red-100' : ''
-                                    }`}
-                                    value={newUser.school_id || ''} onChange={e => setNewUser({...newUser, school_id: e.target.value})}
-                                    disabled={newUser.role === UserRole.ADMIN}
-                                >
-                                    <option value="">{newUser.role === UserRole.ADMIN ? 'غير مطلوب للمدير' : 'اختر المدرسة (مطلوب)'}</option>
-                                    {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="mt-4 flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-100">
-                            <div className="w-full sm:w-auto">
-                                {editingUserId && (
-                                    <button 
-                                        onClick={async () => {
-                                            const success = await handleDeleteUser(editingUserId);
-                                            if(success) {
-                                                setIsAddingUser(false);
-                                                setEditingUserId(null);
-                                                setNewUser({ role: UserRole.TEACHER });
-                                            }
-                                        }}
-                                        className="w-full sm:w-auto text-red-600 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 text-sm flex items-center justify-center gap-2"
-                                    >
-                                        <Trash2 size={16} /> حذف
-                                    </button>
-                                )}
-                            </div>
-                            <div className="flex gap-2 w-full sm:w-auto justify-end">
-                                <button onClick={() => setIsAddingUser(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
-                                <button onClick={handleSaveUser} className="bg-primary-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-primary-700 shadow-sm">
-                                    {editingUserId ? 'تحديث البيانات' : 'حفظ المستخدم'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50 md:bg-white rounded-xl md:shadow-sm md:border border-gray-200 overflow-hidden">
                     {isLoading ? (
-                         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={32} /></div>
+                         <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-primary-600" /></div>
                     ) : systemUsers.length === 0 ? (
-                        <div className="p-12 text-center text-gray-500">
-                             <Shield size={48} className="mx-auto text-gray-300 mb-3" />
-                             <p>لا يوجد مستخدمين مسجلين.</p>
-                        </div>
+                        <div className="p-12 text-center text-gray-500">لا يوجد بيانات.</div>
                     ) : (
-                        <table className="w-full text-right">
-                            <thead className="bg-gray-50 text-gray-600 text-sm">
-                                <tr>
-                                    <th className="px-6 py-3">الاسم</th>
-                                    <th className="px-6 py-3">البريد الإلكتروني</th>
-                                    <th className="px-6 py-3">الرقم السري</th>
-                                    <th className="px-6 py-3">الدور</th>
-                                    <th className="px-6 py-3">المدرسة</th>
-                                    <th className="px-6 py-3">تاريخ الإضافة</th>
-                                    <th className="px-6 py-3"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
+                        <>
+                            {/* Desktop Table */}
+                            <div className="hidden md:block">
+                                <table className="w-full text-right">
+                                    <thead className="bg-gray-50 text-gray-600 text-sm">
+                                        <tr>
+                                            <th className="px-6 py-3">الاسم</th>
+                                            <th className="px-6 py-3">البريد</th>
+                                            <th className="px-6 py-3">الدور</th>
+                                            <th className="px-6 py-3">المدرسة</th>
+                                            <th className="px-6 py-3"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {systemUsers.map(user => (
+                                            <tr key={user.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 font-medium">{user.full_name}</td>
+                                                <td className="px-6 py-4 text-sm text-gray-500">{user.email}</td>
+                                                <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-gray-700">{user.role}</span></td>
+                                                <td className="px-6 py-4 text-sm text-gray-500">{(user as any).schools?.name || '-'}</td>
+                                                <td className="px-6 py-4 flex gap-2 justify-end">
+                                                    <button onClick={() => handleEditUser(user)} className="text-blue-600 hover:bg-blue-50 p-2 rounded"><Edit2 size={16}/></button>
+                                                    <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            {/* Mobile Card View */}
+                            <div className="md:hidden flex flex-col gap-3">
                                 {systemUsers.map(user => (
-                                    <tr key={user.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 font-medium text-gray-800">{user.full_name}</td>
-                                        <td className="px-6 py-4 text-gray-500 text-sm">{user.email}</td>
-                                        <td className="px-6 py-4 text-gray-500 text-sm font-mono">{user.password || '-'}</td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs border ${
-                                                user.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-100' : 
-                                                user.role === UserRole.PRINCIPAL ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                                'bg-gray-50 text-gray-700 border-gray-200'
-                                            }`}>
-                                                {user.role}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">{(user as any).schools?.name || '-'}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-400">{new Date(user.created_at || '').toLocaleDateString('ar-SA')}</td>
-                                        <td className="px-6 py-4 text-left flex gap-1 justify-end">
-                                            <button onClick={() => handleEditUser(user)} className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors">
-                                                <Edit2 size={16} />
-                                            </button>
-                                            <button onClick={() => handleDeleteUser(user.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors">
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </td>
-                                    </tr>
+                                    <div key={user.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h4 className="font-bold text-gray-900">{user.full_name}</h4>
+                                                <p className="text-xs text-gray-500">{user.email}</p>
+                                            </div>
+                                            <span className="bg-primary-50 text-primary-700 px-2 py-1 rounded text-xs font-bold">{user.role}</span>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">
+                                            <Shield size={12}/> المدرسة: {(user as any).schools?.name || '-'}
+                                        </div>
+                                        <div className="flex gap-2 pt-2 border-t border-gray-50">
+                                            <button onClick={() => handleEditUser(user)} className="flex-1 bg-gray-50 text-gray-700 py-2 rounded text-xs font-bold flex justify-center gap-1"><Edit2 size={14}/> تعديل</button>
+                                            <button onClick={() => handleDeleteUser(user.id)} className="flex-1 bg-red-50 text-red-700 py-2 rounded text-xs font-bold flex justify-center gap-1"><Trash2 size={14}/> حذف</button>
+                                        </div>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
+                            </div>
+                        </>
                     )}
                 </div>
             </div>
@@ -950,173 +388,70 @@ NOTIFY pgrst, 'reload schema';
         {/* --- SUBSCRIPTIONS TAB --- */}
         {activeTab === 'subscriptions' && (
             <div className="space-y-6">
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* ... stats ... */}
+                <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-lg text-gray-700">الاشتراكات</h3>
+                    <button onClick={handleOpenAddSub} className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-primary-700 font-bold shadow-sm">
+                         <Plus size={16} /> اشتراك جديد
+                    </button>
                 </div>
 
-                {/* Subscriptions List */}
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <h3 className="font-bold text-lg text-gray-700">إدارة الاشتراكات</h3>
-                        <button 
-                            onClick={() => {
-                                setEditingSubId(null);
-                                setIsAddingSub(!isAddingSub);
-                            }}
-                            className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-primary-700 shadow-sm"
-                        >
-                             {isAddingSub ? <X size={16} /> : <Plus size={16} />}
-                             {isAddingSub ? 'إلغاء' : 'اشتراك جديد'}
-                        </button>
-                    </div>
-
-                    {isAddingSub && (
-                        <div className="bg-white p-6 rounded-xl border border-blue-100 shadow-sm animate-fade-in ring-1 ring-blue-50">
-                            {/* ... form ... */}
-                            <h4 className="font-bold mb-4 text-sm text-blue-800 flex items-center gap-2">
-                                <CreditCard size={16} /> {editingSubId ? 'تعديل الاشتراك' : 'إضافة اشتراك جديد'}
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">المدرسة</label>
-                                    <select 
-                                        className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none bg-white"
-                                        value={newSub.school_id} onChange={e => setNewSub({...newSub, school_id: e.target.value})}
-                                    >
-                                        <option value="">اختر المدرسة</option>
-                                        {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                    </select>
-                                </div>
-                                {/* ... other fields ... */}
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">نوع الباقة</label>
-                                    <select 
-                                        className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none bg-white"
-                                        value={newSub.plan_name} onChange={e => setNewSub({...newSub, plan_name: e.target.value})}
-                                    >
-                                        <option value="Basic">الأساسية (Basic)</option>
-                                        <option value="Premium">المتقدمة (Premium)</option>
-                                        <option value="Enterprise">المؤسسات (Enterprise)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">السعر (ريال)</label>
-                                    <input 
-                                        type="number" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none"
-                                        value={newSub.price} onChange={e => setNewSub({...newSub, price: parseFloat(e.target.value)})}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">تاريخ البدء</label>
-                                    <input 
-                                        type="date" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none"
-                                        value={newSub.start_date} onChange={e => setNewSub({...newSub, start_date: e.target.value})}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">تاريخ الانتهاء</label>
-                                    <input 
-                                        type="date" className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none"
-                                        value={newSub.end_date} onChange={e => setNewSub({...newSub, end_date: e.target.value})}
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 border-t pt-4 border-gray-100">
-                                <div className="w-full sm:w-auto">
-                                    {editingSubId && (
-                                        <button 
-                                            onClick={async () => {
-                                                const success = await handleDeleteSubscription(editingSubId);
-                                                if (success) {
-                                                    setIsAddingSub(false);
-                                                    setEditingSubId(null);
-                                                    setNewSub({
-                                                        school_id: '',
-                                                        plan_name: 'Basic',
-                                                        start_date: new Date().toISOString().split('T')[0],
-                                                        end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-                                                        price: 0
-                                                    });
-                                                }
-                                            }}
-                                            className="w-full sm:w-auto text-red-600 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 text-sm flex items-center justify-center gap-2"
-                                        >
-                                            <Trash2 size={16} /> حذف الاشتراك
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="flex gap-2 w-full sm:w-auto justify-end">
-                                    <button onClick={() => setIsAddingSub(false)} className="text-gray-500 text-sm px-4 py-2 hover:bg-gray-50 rounded-lg">إلغاء</button>
-                                    <button onClick={handleSaveSubscription} className="bg-blue-600 text-white text-sm px-6 py-2 rounded-lg hover:bg-blue-700 shadow-sm">
-                                        {editingSubId ? 'تحديث الاشتراك' : 'تفعيل الاشتراك'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                            <span className="text-xs text-gray-500 font-medium">قائمة الاشتراكات الحالية</span>
-                            <button onClick={fetchSubscriptions} className="text-primary-600 text-xs flex items-center gap-1 hover:underline">
-                                <RefreshCw size={12} /> تحديث
-                            </button>
-                        </div>
-                        {isLoading ? (
-                            <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-primary-600" /></div>
-                        ) : subscriptions.length === 0 ? (
-                            <div className="p-12 text-center text-gray-500">
-                                <CreditCard size={48} className="mx-auto text-gray-300 mb-3" />
-                                <p>لا توجد اشتراكات مسجلة حالياً.</p>
-                            </div>
-                        ) : (
-                            <table className="w-full text-right">
-                                <thead className="bg-gray-50 text-gray-600 text-sm">
-                                    <tr>
-                                        <th className="px-6 py-3">المدرسة</th>
-                                        <th className="px-6 py-3">الخطة</th>
-                                        <th className="px-6 py-3">الفترة</th>
-                                        <th className="px-6 py-3">السعر</th>
-                                        <th className="px-6 py-3">الحالة</th>
-                                        <th className="px-6 py-3"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {subscriptions.map(sub => (
-                                        <tr key={sub.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 font-medium text-gray-800">{sub.school_name || 'غير محدد'}</td>
-                                            <td className="px-6 py-4">
-                                                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs border border-blue-100 font-medium">{sub.plan_name}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
-                                                <div className="flex items-center gap-1 text-xs">
-                                                    <Calendar size={12}/>
-                                                    <span>{sub.start_date}</span>
-                                                    <span className="mx-1">→</span>
-                                                    <span>{sub.end_date}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 font-bold text-gray-700 text-sm">{sub.price} ريال</td>
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                    {sub.status === 'active' ? 'نشط' : 'منتهي'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-left flex gap-1 justify-end">
-                                                <button onClick={() => handleEditSubscription(sub)} className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="تعديل">
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button onClick={() => handleDeleteSubscription(sub.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors" title="إلغاء الاشتراك">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </td>
+                <div className="bg-gray-50 md:bg-white rounded-xl md:shadow-sm md:border border-gray-200 overflow-hidden">
+                    {isLoading ? (
+                        <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div>
+                    ) : subscriptions.length === 0 ? (
+                        <div className="p-12 text-center text-gray-500">لا توجد بيانات.</div>
+                    ) : (
+                        <>
+                            {/* Desktop Table */}
+                            <div className="hidden md:block">
+                                <table className="w-full text-right">
+                                    <thead className="bg-gray-50 text-gray-600 text-sm">
+                                        <tr>
+                                            <th className="px-6 py-3">المدرسة</th>
+                                            <th className="px-6 py-3">الخطة</th>
+                                            <th className="px-6 py-3">النهاية</th>
+                                            <th className="px-6 py-3">السعر</th>
+                                            <th className="px-6 py-3"></th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {subscriptions.map(sub => (
+                                            <tr key={sub.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 font-medium">{sub.school_name || 'غير محدد'}</td>
+                                                <td className="px-6 py-4"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{sub.plan_name}</span></td>
+                                                <td className="px-6 py-4 text-sm font-mono">{sub.end_date}</td>
+                                                <td className="px-6 py-4 font-bold">{sub.price} ريال</td>
+                                                <td className="px-6 py-4 flex gap-2 justify-end">
+                                                    <button onClick={() => handleEditSubscription(sub)} className="text-gray-400 hover:text-blue-600 p-2"><Edit2 size={16}/></button>
+                                                    <button onClick={() => handleDeleteSubscription(sub.id)} className="text-gray-400 hover:text-red-600 p-2"><Trash2 size={16}/></button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile Card View */}
+                            <div className="md:hidden flex flex-col gap-3">
+                                {subscriptions.map(sub => (
+                                    <div key={sub.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h4 className="font-bold text-gray-900">{sub.school_name}</h4>
+                                            <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">{sub.plan_name}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-3 text-xs text-gray-500">
+                                            <span>ينتهي: {sub.end_date}</span>
+                                            <span className="font-bold text-gray-800">{sub.price} ريال</span>
+                                        </div>
+                                        <div className="flex gap-2 pt-2 border-t border-gray-50">
+                                            <button onClick={() => handleEditSubscription(sub)} className="flex-1 bg-gray-50 text-gray-700 py-2 rounded text-xs font-bold flex justify-center gap-1"><Edit2 size={14}/> تعديل</button>
+                                            <button onClick={() => handleDeleteSubscription(sub.id)} className="flex-1 bg-red-50 text-red-700 py-2 rounded text-xs font-bold flex justify-center gap-1"><Trash2 size={14}/> حذف</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         )}
@@ -1124,126 +459,119 @@ NOTIFY pgrst, 'reload schema';
         {/* --- DATABASE TAB --- */}
         {activeTab === 'database' && (
             <div className="space-y-6">
-                {/* Backup UI */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <div className="flex items-start gap-4 mb-6">
-                        <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
-                            <FileJson size={24} />
-                        </div>
-                        <div className="flex-1">
-                            <h2 className="text-xl font-bold text-gray-800 mb-1">النسخ الاحتياطي واستعادة البيانات</h2>
-                            <p className="text-gray-500 text-sm">يمكنك تصدير قاعدة البيانات كملف JSON وحفظه في جهازك، أو استعادة البيانات من ملف سابق.</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         {/* Backup Card */}
-                        <div className="border border-gray-200 rounded-xl p-5 hover:border-blue-200 transition-colors bg-gray-50">
-                             <div className="flex items-center gap-2 mb-3 font-bold text-gray-700">
-                                 <Download size={20} className="text-blue-600" />
-                                 تصدير نسخة احتياطية
-                             </div>
-                             <p className="text-xs text-gray-500 mb-4 h-10">
-                                 سيتم تحميل ملف JSON يحتوي على جميع بيانات الجداول (المدارس، المعلمين، التقييمات...).
-                             </p>
-                             <button 
-                                onClick={handleExportBackup}
-                                disabled={isBackingUp}
-                                className="w-full bg-white border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 font-bold text-sm flex justify-center items-center gap-2 transition-all"
-                             >
-                                 {isBackingUp ? <Loader2 className="animate-spin" size={16}/> : <Download size={16} />}
-                                 {isBackingUp ? 'جاري التصدير...' : 'تحميل النسخة (JSON)'}
-                             </button>
-                        </div>
-
-                         {/* Restore Card */}
-                        <div className="border border-gray-200 rounded-xl p-5 hover:border-green-200 transition-colors bg-gray-50">
-                             <div className="flex items-center gap-2 mb-3 font-bold text-gray-700">
-                                 <UploadCloud size={20} className="text-green-600" />
-                                 استعادة البيانات
-                             </div>
-                             <p className="text-xs text-gray-500 mb-4 h-10">
-                                 قم برفع ملف JSON لاستعادة البيانات. 
-                                 <span className="text-red-500 font-bold block mt-1">تنبيه: هذا الإجراء قد يضيف بيانات جديدة أو يحدث الموجودة.</span>
-                             </p>
-                             <input 
-                                type="file" 
-                                accept=".json" 
-                                ref={fileInputRef}
-                                className="hidden"
-                                onChange={handleImportBackup}
-                             />
-                             <button 
-                                onClick={() => !isRestoring && fileInputRef.current?.click()}
-                                disabled={isRestoring}
-                                className="w-full bg-white border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-green-50 hover:text-green-700 hover:border-green-200 font-bold text-sm flex justify-center items-center gap-2 transition-all"
-                             >
-                                 {isRestoring ? <Loader2 className="animate-spin" size={16}/> : <UploadCloud size={16} />}
-                                 {isRestoring ? 'جاري الاستعادة...' : 'رفع ملف النسخة'}
-                             </button>
-                        </div>
+                    <h2 className="text-xl font-bold text-gray-800 mb-4">النسخ الاحتياطي</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button onClick={handleExportBackup} disabled={isBackingUp} className="bg-blue-50 text-blue-700 p-4 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-100 font-bold">
+                            {isBackingUp ? <Loader2 className="animate-spin" size={20}/> : <Download size={20} />} تصدير (Backup)
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isRestoring} className="bg-green-50 text-green-700 p-4 rounded-lg flex items-center justify-center gap-2 hover:bg-green-100 font-bold">
+                            {isRestoring ? <Loader2 className="animate-spin" size={20}/> : <UploadCloud size={20} />} استيراد (Restore)
+                        </button>
+                        <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
                     </div>
                 </div>
 
-                {/* --- DANGER ZONE: FACTORY RESET --- */}
                 <div className="bg-red-50 p-6 rounded-xl border border-red-200">
-                    <div className="flex items-start gap-4">
-                        <div className="p-3 bg-red-100 rounded-lg text-red-600">
-                            <AlertOctagon size={24} />
-                        </div>
-                        <div className="flex-1">
-                            <h2 className="text-xl font-bold text-red-800 mb-1">منطقة الخطر: تصفية النظام</h2>
-                            <p className="text-red-700 mb-4 text-sm leading-relaxed">
-                                هذا الإجراء سيقوم بحذف <strong className="underline">جميع البيانات</strong> من جداول (المدارس، المعلمين، المستخدمين، التقييمات، الأحداث، الاشتراكات).
-                                <br/> لا يمكن التراجع عن هذه العملية بعد تنفيذها.
-                            </p>
-                            
-                            <button 
-                                onClick={handleFactoryReset}
-                                disabled={isResetting}
-                                className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isResetting ? <Loader2 className="animate-spin" size={18}/> : <Trash2 size={18} />}
-                                حذف جميع البيانات (تصفية النظام)
-                            </button>
-                        </div>
-                    </div>
+                    <h2 className="text-xl font-bold text-red-800 mb-2">تصفية النظام</h2>
+                    <p className="text-red-600 text-sm mb-4">حذف جميع البيانات نهائياً.</p>
+                    <button onClick={handleFactoryReset} disabled={isResetting} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50">
+                        {isResetting ? <Loader2 className="animate-spin" size={18}/> : <Trash2 size={18} />} حذف الكل
+                    </button>
                 </div>
 
-                {/* Schema Script Section */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <div className="flex items-start gap-4">
-                        <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600">
-                            <Database size={24} />
-                        </div>
-                        <div className="flex-1">
-                            <h2 className="text-xl font-bold text-gray-800 mb-2">تأسيس قاعدة البيانات وإصلاح القيود</h2>
-                            <p className="text-gray-500 mb-4 text-sm leading-relaxed">
-                                يحتوي السكربت أدناه على إصلاح <strong>تفرد البيانات (البريد والهوية)</strong> وإنشاء جداول <strong>بنك الملاحظات</strong> الجديدة.
-                            </p>
-                            
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                                <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm">
-                                    <AlertTriangle size={16} /> تحديث هام
-                                </h4>
-                                <p className="text-xs text-blue-800">
-                                    لتفعيل ميزة توليد الملاحظات الذكية من قاعدة البيانات، يرجى نسخ الكود أدناه وتشغيله في Supabase SQL Editor.
-                                </p>
-                            </div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="font-bold text-gray-800">تحديث هيكلية قاعدة البيانات</h2>
+                        <button onClick={copyToClipboard} className="text-blue-600 text-sm hover:underline">{copied ? 'تم النسخ' : 'نسخ الكود'}</button>
+                    </div>
+                    <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-auto h-64 font-mono" dir="ltr">{fullSchemaScriptActual}</pre>
+                </div>
+            </div>
+        )}
 
-                            <div className="relative group">
-                                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-left text-xs overflow-x-auto font-mono h-96 custom-scrollbar" dir="ltr">
-                                    {fullSchemaScript}
-                                </pre>
-                                <button 
-                                onClick={copyToClipboard}
-                                className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-all flex items-center gap-2 text-xs backdrop-blur-sm"
-                                >
-                                    {copied ? <Check size={14} /> : <Copy size={14} />}
-                                    {copied ? 'تم النسخ' : 'نسخ الكود'}
-                                </button>
+        {/* User Modal */}
+        {isUserModalOpen && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center p-6 border-b">
+                        <h3 className="text-xl font-bold text-gray-800">{editingUserId ? 'تعديل مستخدم' : 'مستخدم جديد'}</h3>
+                        <button onClick={() => setIsUserModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">الاسم الكامل</label>
+                            <input type="text" className="w-full border p-2 rounded-lg" placeholder="الاسم" value={newUser.full_name || ''} onChange={e => setNewUser({...newUser, full_name: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني</label>
+                            <input type="email" className="w-full border p-2 rounded-lg" placeholder="example@domain.com" value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">كلمة المرور</label>
+                            <input type="text" className="w-full border p-2 rounded-lg" placeholder="********" value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">الصلاحية</label>
+                                <select className="w-full border p-2 rounded-lg bg-white" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
+                                    {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة</label>
+                                <select className="w-full border p-2 rounded-lg bg-white" value={newUser.school_id || ''} onChange={e => setNewUser({...newUser, school_id: e.target.value})}>
+                                    <option value="">(اختياري للمدير)</option>
+                                    {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
                             </div>
                         </div>
+                    </div>
+                    <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                        <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">إلغاء</button>
+                        <button onClick={handleSaveUser} className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 font-bold">حفظ</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Subscription Modal */}
+        {isSubModalOpen && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center p-6 border-b">
+                        <h3 className="text-xl font-bold text-gray-800">{editingSubId ? 'تعديل اشتراك' : 'اشتراك جديد'}</h3>
+                        <button onClick={() => setIsSubModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">المدرسة</label>
+                            <select className="w-full border p-2 rounded-lg bg-white" value={newSub.school_id} onChange={e => setNewSub({...newSub, school_id: e.target.value})}>
+                                <option value="">اختر المدرسة</option>
+                                {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">خطة الاشتراك</label>
+                                <select className="w-full border p-2 rounded-lg bg-white" value={newSub.plan_name} onChange={e => setNewSub({...newSub, plan_name: e.target.value})}>
+                                    <option value="Basic">Basic</option>
+                                    <option value="Premium">Premium</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">السعر (ريال)</label>
+                                <input type="number" className="w-full border p-2 rounded-lg" placeholder="0" value={newSub.price} onChange={e => setNewSub({...newSub, price: parseFloat(e.target.value)})} />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ الانتهاء</label>
+                            <input type="date" className="w-full border p-2 rounded-lg" value={newSub.end_date} onChange={e => setNewSub({...newSub, end_date: e.target.value})} />
+                        </div>
+                    </div>
+                    <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                        <button onClick={() => setIsSubModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">إلغاء</button>
+                        <button onClick={handleSaveSubscription} className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 font-bold">حفظ</button>
                     </div>
                 </div>
             </div>

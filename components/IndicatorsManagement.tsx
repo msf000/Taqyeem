@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Loader2, List, CheckSquare, AlignLeft, Layers, Users, Scale, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Loader2, List, CheckSquare, AlignLeft, Layers, Users, Scale, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { EvaluationIndicator, TeacherCategory } from '../types';
 
@@ -93,6 +93,7 @@ export default function IndicatorsManagement() {
       categoryWeights: ind.categoryWeights || {}
     });
     setIsEditing(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAddNew = () => {
@@ -108,10 +109,11 @@ export default function IndicatorsManagement() {
       categoryWeights: {}
     });
     setIsEditing(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = async (id: string): Promise<boolean> => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا المؤشر؟ سيتم حذف جميع المعايير المرتبطة به.')) return false;
+    if (!window.confirm('هل أنت متأكد من حذف هذا المؤشر؟ سيتم حذف جميع المعايير المرتبطة بها.')) return false;
 
     try {
       const { error } = await supabase.from('evaluation_indicators').delete().eq('id', id);
@@ -261,194 +263,179 @@ export default function IndicatorsManagement() {
 
   if (isEditing) {
       return (
-          <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
-              <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                  <h3 className="font-bold text-lg text-gray-800">
-                      {formData.id ? 'تعديل المؤشر' : 'إضافة مؤشر جديد'}
-                  </h3>
-                  <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-gray-700">
-                      <X size={24} />
+          <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col animate-fade-in">
+              {/* Mobile Sticky Header */}
+              <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10 flex justify-between items-center shadow-sm">
+                  <div className="flex items-center gap-2">
+                      <button onClick={() => setIsEditing(false)} className="p-2 -mr-2 text-gray-500 hover:bg-gray-100 rounded-full">
+                          <ArrowLeft size={20} />
+                      </button>
+                      <h3 className="font-bold text-lg text-gray-800 truncate max-w-[200px]">
+                          {formData.id ? 'تعديل المؤشر' : 'إضافة مؤشر'}
+                      </h3>
+                  </div>
+                  <button 
+                      onClick={handleSave} 
+                      disabled={isSaving}
+                      className="bg-primary-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 flex items-center gap-1"
+                  >
+                      {isSaving ? <Loader2 className="animate-spin" size={16} /> : 'حفظ'}
                   </button>
               </div>
               
-              <div className="p-6 space-y-6">
-                  {/* Basic Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                      <div className="md:col-span-8">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">نص المؤشر</label>
-                          <input 
-                              type="text" 
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                              value={formData.text}
-                              onChange={e => setFormData({...formData, text: e.target.value})}
-                          />
-                      </div>
-                      <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">الوزن الافتراضي</label>
-                          <input 
-                              type="number" 
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                              value={formData.weight}
-                              onChange={e => setFormData({...formData, weight: parseFloat(e.target.value)})}
-                          />
-                      </div>
-                       <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">الترتيب</label>
-                          <input 
-                              type="number" 
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                              value={formData.sort_order}
-                              onChange={e => setFormData({...formData, sort_order: parseInt(e.target.value)})}
-                          />
-                      </div>
-                      <div className="md:col-span-12">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">وصف المؤشر</label>
-                          <textarea 
-                              rows={2}
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
-                              value={formData.description}
-                              onChange={e => setFormData({...formData, description: e.target.value})}
-                          />
-                      </div>
-                  </div>
-
-                  {/* Target Categories & Weights */}
-                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                      <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-3">
-                          <Users size={16} /> الفئات المستهدفة
-                      </label>
-                      <p className="text-xs text-gray-500 mb-3">اختر الفئات التي ينطبق عليها هذا المؤشر. إذا لم يتم اختيار أي فئة، سيتم تطبيقه على الجميع.</p>
-                      
-                      <div className="flex flex-wrap gap-3 mb-4">
-                          {Object.values(TeacherCategory).map(cat => {
-                              const isSelected = formData.applicableCategories.includes(cat);
-                              return (
-                                <button 
-                                    key={cat}
-                                    onClick={() => toggleCategory(cat)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                                        isSelected 
-                                        ? 'bg-blue-600 text-white border-blue-600' 
-                                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-300'
-                                    }`}
-                                >
-                                    {cat}
-                                    {isSelected && <span className="mr-1">✓</span>}
-                                </button>
-                              );
-                          })}
+              <div className="flex-1 overflow-y-auto p-4 pb-24">
+                  <div className="max-w-4xl mx-auto space-y-6">
+                      {/* Basic Info */}
+                      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-4">
+                          <div className="md:col-span-8">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">نص المؤشر</label>
+                              <input 
+                                  type="text" 
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                  value={formData.text}
+                                  onChange={e => setFormData({...formData, text: e.target.value})}
+                              />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 md:col-span-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">الوزن</label>
+                                  <input 
+                                      type="number" 
+                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                      value={formData.weight}
+                                      onChange={e => setFormData({...formData, weight: parseFloat(e.target.value)})}
+                                  />
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">الترتيب</label>
+                                  <input 
+                                      type="number" 
+                                      className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                      value={formData.sort_order}
+                                      onChange={e => setFormData({...formData, sort_order: parseInt(e.target.value)})}
+                                  />
+                              </div>
+                          </div>
+                          <div className="md:col-span-12">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">وصف المؤشر</label>
+                              <textarea 
+                                  rows={2}
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500"
+                                  value={formData.description}
+                                  onChange={e => setFormData({...formData, description: e.target.value})}
+                              />
+                          </div>
                       </div>
 
-                      {/* Custom Weights Configuration */}
-                      {formData.applicableCategories.length > 0 && (
-                          <div className="mt-4 border-t border-blue-200 pt-4">
-                              <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-3">
-                                  <Scale size={16} /> تخصيص الأوزان (اختياري)
-                              </label>
-                              <p className="text-xs text-gray-500 mb-3">يمكنك تحديد وزن مختلف للمؤشر بناءً على الفئة الوظيفية.</p>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Target Categories */}
+                      <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                          <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-3">
+                              <Users size={16} /> الفئات المستهدفة
+                          </label>
+                          <div className="flex flex-wrap gap-2 mb-4">
+                              {Object.values(TeacherCategory).map(cat => {
+                                  const isSelected = formData.applicableCategories.includes(cat);
+                                  return (
+                                    <button 
+                                        key={cat}
+                                        onClick={() => toggleCategory(cat)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                            isSelected 
+                                            ? 'bg-blue-600 text-white border-blue-600' 
+                                            : 'bg-white text-gray-600 border-gray-300'
+                                        }`}
+                                    >
+                                        {cat}
+                                        {isSelected && <span className="mr-1">✓</span>}
+                                    </button>
+                                  );
+                              })}
+                          </div>
+                          {formData.applicableCategories.length > 0 && (
+                              <div className="grid grid-cols-2 gap-3 mt-3 border-t border-blue-200 pt-3">
                                   {formData.applicableCategories.map(cat => (
-                                      <div key={cat} className="bg-white p-2 rounded-lg border border-blue-100 shadow-sm">
-                                          <label className="block text-xs font-medium text-gray-600 mb-1">{cat}</label>
+                                      <div key={cat} className="bg-white p-2 rounded border border-blue-100">
+                                          <label className="block text-[10px] text-gray-500 mb-1">وزن {cat}</label>
                                           <input 
                                               type="number"
-                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-500"
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
                                               value={formData.categoryWeights[cat] !== undefined ? formData.categoryWeights[cat] : formData.weight}
                                               onChange={(e) => handleCategoryWeightChange(cat, e.target.value)}
-                                              placeholder={formData.weight.toString()}
                                           />
                                       </div>
                                   ))}
                               </div>
+                          )}
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                              <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
+                                  <List size={16} /> المعايير التفصيلية
+                              </label>
+                              <textarea 
+                                  rows={6}
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm"
+                                  value={formData.criteriaText}
+                                  onChange={e => setFormData({...formData, criteriaText: e.target.value})}
+                                  placeholder="كل معيار في سطر جديد"
+                              />
+                          </div>
+                          <div>
+                              <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
+                                  <CheckSquare size={16} /> شواهد التحقق
+                              </label>
+                              <textarea 
+                                  rows={6}
+                                  className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 text-sm"
+                                  value={formData.verificationText}
+                                  onChange={e => setFormData({...formData, verificationText: e.target.value})}
+                                  placeholder="كل شاهد في سطر جديد"
+                              />
+                          </div>
+                      </div>
+
+                      {/* Rubric */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                          <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-4">
+                              <Layers size={16} /> سلم التقدير (Rubric)
+                          </label>
+                          <div className="space-y-3">
+                              {[5, 4, 3, 2, 1].map(level => (
+                                  <div key={level} className="flex gap-2">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-1
+                                          ${level >= 4 ? 'bg-green-100 text-green-700' : level >= 3 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}
+                                      `}>
+                                          {level}
+                                      </div>
+                                      <textarea 
+                                          rows={2}
+                                          className="flex-1 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                          placeholder={`وصف المستوى ${level}`}
+                                          value={formData.rubric[level]}
+                                          onChange={e => setFormData({
+                                              ...formData, 
+                                              rubric: { ...formData.rubric, [level]: e.target.value } 
+                                          })}
+                                      />
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+
+                      {formData.id && (
+                          <div className="pt-4">
+                              <button 
+                                  onClick={async () => {
+                                      const success = await handleDelete(formData.id!);
+                                      if (success) setIsEditing(false);
+                                  }}
+                                  className="w-full py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center justify-center gap-2 text-sm font-bold"
+                              >
+                                  <Trash2 size={18} /> حذف المؤشر نهائياً
+                              </button>
                           </div>
                       )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Criteria */}
-                      <div>
-                          <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                              <List size={16} /> المعايير التفصيلية
-                          </label>
-                          <p className="text-xs text-gray-500 mb-2">ضع كل معيار في سطر جديد</p>
-                          <textarea 
-                              rows={8}
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-sm"
-                              value={formData.criteriaText}
-                              onChange={e => setFormData({...formData, criteriaText: e.target.value})}
-                              placeholder="مثال:&#10;ينوع في استراتيجيات التدريس&#10;يراعي الفروق الفردية"
-                          />
-                      </div>
-                      
-                      {/* Verification Indicators */}
-                      <div>
-                          <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                              <CheckSquare size={16} /> شواهد التحقق
-                          </label>
-                          <p className="text-xs text-gray-500 mb-2">ضع كل شاهد في سطر جديد</p>
-                          <textarea 
-                              rows={8}
-                              className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 font-sm"
-                              value={formData.verificationText}
-                              onChange={e => setFormData({...formData, verificationText: e.target.value})}
-                              placeholder="مثال:&#10;دفتر التحضير&#10;سجل الدرجات"
-                          />
-                      </div>
-                  </div>
-
-                  {/* Rubric */}
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-4">
-                          <Layers size={16} /> سلم التقدير اللفظي (Rubric)
-                      </label>
-                      <div className="space-y-3">
-                          {[5, 4, 3, 2, 1].map(level => (
-                              <div key={level} className="flex items-center gap-4">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0
-                                      ${level >= 4 ? 'bg-green-100 text-green-700' : level >= 3 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}
-                                  `}>
-                                      {level}
-                                  </div>
-                                  <input 
-                                      type="text" 
-                                      className="flex-1 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary-500"
-                                      placeholder={`وصف المستوى ${level}`}
-                                      value={formData.rubric[level]}
-                                      onChange={e => setFormData({
-                                          ...formData, 
-                                          rubric: { ...formData.rubric, [level]: e.target.value } 
-                                      })}
-                                  />
-                              </div>
-                          ))}
-                      </div>
-                  </div>
-              </div>
-
-              <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-between items-center gap-3">
-                  <div className="flex-1">
-                      {formData.id && (
-                          <button 
-                              onClick={async () => {
-                                  const success = await handleDelete(formData.id!);
-                                  if (success) setIsEditing(false);
-                              }}
-                              className="px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-2 text-sm"
-                          >
-                              <Trash2 size={16} /> حذف المؤشر
-                          </button>
-                      )}
-                  </div>
-                  <div className="flex gap-2">
-                      <button onClick={() => setIsEditing(false)} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-white">إلغاء</button>
-                      <button 
-                          onClick={handleSave} 
-                          disabled={isSaving}
-                          className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 disabled:opacity-50"
-                      >
-                          {isSaving && <Loader2 className="animate-spin" size={16} />}
-                          حفظ التغييرات
-                      </button>
                   </div>
               </div>
           </div>
@@ -456,18 +443,18 @@ export default function IndicatorsManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <AlignLeft className="text-primary-600" />
-          إدارة مؤشرات الأداء
+          إدارة المؤشرات
         </h2>
         <button 
           onClick={handleAddNew}
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm"
+          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm text-sm font-bold"
         >
           <Plus size={18} />
-          إضافة مؤشر جديد
+          إضافة
         </button>
       </div>
 
@@ -480,29 +467,25 @@ export default function IndicatorsManagement() {
           {indicators.length === 0 && <div className="text-center p-8 text-gray-500">لا توجد مؤشرات مسجلة</div>}
           
           {indicators.map((ind) => (
-            <div key={ind.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-shadow group">
+            <div key={ind.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-shadow group relative overflow-hidden">
                 <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-1">
-                            <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-mono">#{ (ind as any).sort_order }</span>
-                            <h3 className="font-bold text-gray-800 text-lg">{ind.text}</h3>
-                            <span className="bg-primary-50 text-primary-700 text-xs px-2 py-1 rounded-full font-bold">{ind.weight} درجة</span>
+                    <div className="flex-1 pl-4">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-mono">#{ (ind as any).sort_order }</span>
+                            <span className="bg-primary-50 text-primary-700 text-xs px-2 py-0.5 rounded font-bold">{ind.weight}</span>
                         </div>
-                        <p className="text-sm text-gray-500 mb-3">{ind.description}</p>
+                        <h3 className="font-bold text-gray-800 text-base mb-2">{ind.text}</h3>
                         
                         {ind.applicableCategories && ind.applicableCategories.length > 0 ? (
-                           <div className="flex flex-wrap gap-2 mb-3">
+                           <div className="flex flex-wrap gap-1 mb-2">
                                 {ind.applicableCategories.map(cat => (
-                                    <span key={cat} className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1">
+                                    <span key={cat} className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded border border-blue-100">
                                        {cat}
-                                       {ind.categoryWeights && ind.categoryWeights[cat] && ind.categoryWeights[cat] !== ind.weight && (
-                                           <span className="bg-white px-1 rounded text-blue-800 font-bold">{ind.categoryWeights[cat]}</span>
-                                       )}
                                     </span>
                                 ))}
                            </div>
                         ) : (
-                            <div className="mb-3 text-xs text-gray-400">ينطبق على الجميع</div>
+                            <div className="mb-2 text-xs text-gray-400">عام (للجميع)</div>
                         )}
 
                         <div className="flex gap-4 text-xs text-gray-400">
@@ -511,12 +494,9 @@ export default function IndicatorsManagement() {
                         </div>
                     </div>
                     
-                    <div className="flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleEdit(ind)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                    <div className="flex flex-col gap-2">
+                        <button onClick={() => handleEdit(ind)} className="p-2 text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg">
                             <Edit2 size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(ind.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                            <Trash2 size={18} />
                         </button>
                     </div>
                 </div>

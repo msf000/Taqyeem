@@ -16,14 +16,14 @@ interface DashboardProps {
 const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description, gradient }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string, gradient?: string }) => (
   <button 
     onClick={onClick}
-    className={`${colorClass} ${gradient ? gradient : 'bg-white'} p-6 rounded-2xl shadow-card border border-secondary-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-start justify-between gap-4 group relative h-52 w-full text-right overflow-hidden`}
+    className={`${colorClass} ${gradient ? gradient : 'bg-white'} p-5 md:p-6 rounded-2xl shadow-card border border-secondary-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-start justify-between gap-4 group relative min-h-[160px] h-auto md:h-52 w-full text-right overflow-hidden`}
   >
     {/* Background Pattern for decoration */}
     <div className="absolute top-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -translate-x-10 -translate-y-10"></div>
     <div className="absolute bottom-0 right-0 w-24 h-24 bg-black/5 rounded-full blur-2xl translate-x-8 translate-y-8"></div>
 
     <div className="flex justify-between w-full items-start z-10">
-        <div className={`p-4 rounded-xl transition-colors shadow-sm ${gradient ? 'bg-white/20 text-white backdrop-blur-sm' : 'bg-primary-50 text-primary-600'}`}>
+        <div className={`p-3 md:p-4 rounded-xl transition-colors shadow-sm ${gradient ? 'bg-white/20 text-white backdrop-blur-sm' : 'bg-primary-50 text-primary-600'}`}>
             {icon}
         </div>
         {count !== undefined && (
@@ -34,11 +34,11 @@ const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white",
     </div>
     
     <div className="z-10 w-full">
-        <h3 className={`font-bold text-lg mb-1 ${gradient ? 'text-white' : 'text-secondary-900'}`}>{title}</h3>
-        {description && <p className={`text-sm ${gradient ? 'text-white/80' : 'text-secondary-500'}`}>{description}</p>}
+        <h3 className={`font-bold text-base md:text-lg mb-1 ${gradient ? 'text-white' : 'text-secondary-900'}`}>{title}</h3>
+        {description && <p className={`text-xs md:text-sm ${gradient ? 'text-white/80' : 'text-secondary-500'}`}>{description}</p>}
         
-        <div className={`mt-4 flex items-center gap-1 text-sm font-medium ${gradient ? 'text-white/90' : 'text-primary-600'} opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0`}>
-            <span>الذهاب</span> <ChevronLeft size={16} />
+        <div className={`mt-3 md:mt-4 flex items-center gap-1 text-xs md:text-sm font-medium ${gradient ? 'text-white/90' : 'text-primary-600'} opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity transform md:translate-y-2 group-hover:translate-y-0`}>
+            <span>الذهاب</span> <ChevronLeft size={14} />
         </div>
     </div>
   </button>
@@ -152,10 +152,10 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
 
   const getRoleBadge = () => {
       switch(userRole) {
-          case UserRole.ADMIN: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير النظام</span>;
-          case UserRole.PRINCIPAL: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير المدرسة</span>;
-          case UserRole.EVALUATOR: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المقيم</span>;
-          case UserRole.TEACHER: return <span className="bg-white/20 backdrop-blur-sm text-white text-sm px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المعلم</span>;
+          case UserRole.ADMIN: return <span className="bg-white/20 backdrop-blur-sm text-white text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير النظام</span>;
+          case UserRole.PRINCIPAL: return <span className="bg-white/20 backdrop-blur-sm text-white text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">مدير المدرسة</span>;
+          case UserRole.EVALUATOR: return <span className="bg-white/20 backdrop-blur-sm text-white text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المقيم</span>;
+          case UserRole.TEACHER: return <span className="bg-white/20 backdrop-blur-sm text-white text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-medium shadow-sm border border-white/10">المعلم</span>;
           default: return null;
       }
   };
@@ -174,7 +174,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
           case UserRole.ADMIN:
               return (
                 <div className="space-y-8 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                         <QuickAccessCard 
                             icon={<School size={28} />} 
                             title="إدارة المدارس" 
@@ -211,7 +211,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
           case UserRole.PRINCIPAL:
               return (
                 <div className="space-y-8 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                         <QuickAccessCard 
                             icon={<Users size={28} />} 
                             title="قائمة المعلمين" 
@@ -243,16 +243,16 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-secondary-100 shadow-card">
-                            <h3 className="font-bold text-xl text-secondary-800 mb-6">حالة التقييم في المدرسة</h3>
-                            <div className="flex items-center gap-6">
-                                <div className="flex-1 bg-secondary-100 rounded-full h-5 overflow-hidden shadow-inner">
+                        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-2xl border border-secondary-100 shadow-card">
+                            <h3 className="font-bold text-lg md:text-xl text-secondary-800 mb-6">حالة التقييم في المدرسة</h3>
+                            <div className="flex items-center gap-4 md:gap-6">
+                                <div className="flex-1 bg-secondary-100 rounded-full h-4 md:h-5 overflow-hidden shadow-inner">
                                     <div 
                                         className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all duration-1000 rounded-full" 
                                         style={{ width: `${stats.teachers > 0 ? (stats.completedEvals / stats.teachers) * 100 : 0}%` }}
                                     ></div>
                                 </div>
-                                <span className="font-bold text-2xl text-secondary-700">
+                                <span className="font-bold text-xl md:text-2xl text-secondary-700">
                                     {stats.teachers > 0 ? Math.round((stats.completedEvals / stats.teachers) * 100) : 0}%
                                 </span>
                             </div>
@@ -268,7 +268,7 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
           case UserRole.EVALUATOR:
               return (
                 <div className="space-y-8 animate-fade-in">
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                         <QuickAccessCard 
                             icon={<UserCheck size={32} />} 
                             title="المعلمين المسندين" 
@@ -297,48 +297,48 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
           case UserRole.TEACHER:
               return (
                 <div className="space-y-8 animate-fade-in">
-                    <div className="bg-white p-10 rounded-3xl border border-secondary-100 text-center shadow-card max-w-3xl mx-auto relative overflow-hidden">
+                    <div className="bg-white p-6 md:p-10 rounded-3xl border border-secondary-100 text-center shadow-card max-w-3xl mx-auto relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary-400 to-primary-600"></div>
-                        <div className="w-28 h-28 bg-secondary-50 rounded-full flex items-center justify-center mx-auto mb-6 text-secondary-400 border-4 border-white shadow-lg">
-                             <UserCheck size={56} />
+                        <div className="w-20 h-20 md:w-28 md:h-28 bg-secondary-50 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 text-secondary-400 border-4 border-white shadow-lg">
+                             <UserCheck size={40} className="md:w-14 md:h-14" />
                         </div>
-                        <h3 className="text-3xl font-bold text-secondary-800 mb-2">أهلاً بك، {userName}</h3>
-                        <div className="flex justify-center gap-3 mb-10">
-                            <span className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium border border-blue-100">
+                        <h3 className="text-2xl md:text-3xl font-bold text-secondary-800 mb-2">أهلاً بك، {userName}</h3>
+                        <div className="flex flex-col sm:flex-row justify-center gap-2 md:gap-3 mb-8 md:mb-10">
+                            <span className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs md:text-sm font-medium border border-blue-100">
                                 {teacherProfile?.specialty || 'جاري التحميل...'}
                             </span>
-                            <span className="bg-secondary-50 text-secondary-600 px-4 py-1.5 rounded-full text-sm font-medium border border-secondary-200">
+                            <span className="bg-secondary-50 text-secondary-600 px-4 py-1.5 rounded-full text-xs md:text-sm font-medium border border-secondary-200">
                                 {teacherProfile?.schoolName || 'جاري التحميل...'}
                             </span>
                         </div>
                         
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-right">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 text-right">
                             <div 
                                 onClick={() => onNavigate('teacher_evaluation')}
-                                className="border border-secondary-200 p-6 rounded-2xl hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
+                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-primary-600 transition-colors">
                                         <FileBarChart size={24} />
                                     </div>
-                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">اضغط للعرض</span>
+                                    <span className="text-[10px] md:text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">اضغط للعرض</span>
                                 </div>
-                                <h4 className="font-bold text-lg text-secondary-800 group-hover:text-primary-800 mb-1">بطاقة الأداء الوظيفي</h4>
-                                <p className="text-sm text-secondary-500 leading-relaxed">عرض التقييم، إرفاق الشواهد، وتقديم الاعتراضات</p>
+                                <h4 className="font-bold text-base md:text-lg text-secondary-800 group-hover:text-primary-800 mb-1">بطاقة الأداء الوظيفي</h4>
+                                <p className="text-xs md:text-sm text-secondary-500 leading-relaxed">عرض التقييم، إرفاق الشواهد، وتقديم الاعتراضات</p>
                             </div>
                             
                             <div 
                                 onClick={() => onNavigate('teacher_profile')}
-                                className="border border-secondary-200 p-6 rounded-2xl hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
+                                className="border border-secondary-200 p-5 md:p-6 rounded-2xl hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md transition-all cursor-pointer group bg-secondary-50/30"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-white rounded-xl shadow-sm group-hover:text-blue-600 transition-colors">
                                         <UserCircle size={24} />
                                     </div>
-                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">تعديل</span>
+                                    <span className="text-[10px] md:text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">تعديل</span>
                                 </div>
-                                <h4 className="font-bold text-lg text-secondary-800 group-hover:text-blue-800 mb-1">الملف الشخصي</h4>
-                                <p className="text-sm text-secondary-500 leading-relaxed">تحديث البيانات الشخصية وكلمة المرور</p>
+                                <h4 className="font-bold text-base md:text-lg text-secondary-800 group-hover:text-blue-800 mb-1">الملف الشخصي</h4>
+                                <p className="text-xs md:text-sm text-secondary-500 leading-relaxed">تحديث البيانات الشخصية وكلمة المرور</p>
                             </div>
                         </div>
                     </div>
@@ -351,19 +351,19 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* Hero Header */}
-      <div className="bg-gradient-to-br from-secondary-900 via-secondary-800 to-secondary-900 rounded-3xl p-10 text-white shadow-2xl relative overflow-hidden">
+      <div className="bg-gradient-to-br from-secondary-900 via-secondary-800 to-secondary-900 rounded-3xl p-6 md:p-10 text-white shadow-2xl relative overflow-hidden">
         <div className="relative z-10">
-            <div className="flex flex-col md:flex-row md:items-center gap-6 mb-6">
-                <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-4xl font-bold shadow-inner border border-white/10">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 mb-2 md:mb-6">
+                <div className="w-16 h-16 md:w-20 md:h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-bold shadow-inner border border-white/10">
                     {userName.charAt(0)}
                 </div>
                 <div>
-                    <h1 className="text-4xl font-bold mb-3 tracking-tight">مرحباً، {userName}</h1>
-                    <div className="flex items-center gap-3 text-secondary-300">
+                    <h1 className="text-2xl md:text-4xl font-bold mb-2 md:mb-3 tracking-tight">مرحباً، {userName}</h1>
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 text-secondary-300">
                         {getRoleBadge()}
-                        <span className="text-sm border-r border-white/20 pr-3 mr-3 font-medium">
+                        <span className="text-xs md:text-sm border-r border-white/20 pr-3 mr-1 md:mr-3 font-medium">
                             {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                     </div>
@@ -372,15 +372,15 @@ export default function Dashboard({ userId, userName, userRole, schoolId, onNavi
         </div>
         
         {/* Decorative Background Elements */}
-        <div className="absolute -left-10 -top-10 h-64 w-64 bg-primary-500/20 rounded-full blur-[80px]"></div>
-        <div className="absolute right-0 bottom-0 h-96 w-96 bg-blue-500/10 rounded-full blur-[100px] transform translate-x-20 translate-y-20"></div>
+        <div className="absolute -left-10 -top-10 h-48 w-48 md:h-64 md:w-64 bg-primary-500/20 rounded-full blur-[60px] md:blur-[80px]"></div>
+        <div className="absolute right-0 bottom-0 h-64 w-64 md:h-96 md:w-96 bg-blue-500/10 rounded-full blur-[80px] md:blur-[100px] transform translate-x-20 translate-y-20"></div>
         <div className="absolute top-0 right-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
       </div>
 
-      <div className="px-2">
-        <h2 className="text-2xl font-bold text-secondary-800 mb-8 flex items-center gap-3">
+      <div className="px-1 md:px-2">
+        <h2 className="text-xl md:text-2xl font-bold text-secondary-800 mb-6 md:mb-8 flex items-center gap-3">
             <div className="p-2 bg-primary-100 text-primary-700 rounded-lg">
-                {userRole === UserRole.TEACHER ? <UserCheck size={24}/> : <ArrowRightLeft size={24}/>}
+                {userRole === UserRole.TEACHER ? <UserCheck size={20} className="md:w-6 md:h-6"/> : <ArrowRightLeft size={20} className="md:w-6 md:h-6"/>}
             </div>
             {userRole === UserRole.TEACHER ? 'خدماتي' : 'لوحة التحكم والوصول السريع'}
         </h2>

@@ -119,7 +119,6 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
       });
       setEditingId(school.id);
       setIsFormOpen(true);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSaveSchool = async () => {
@@ -219,7 +218,7 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
   };
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative animate-fade-in">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <SchoolIcon className="text-primary-600" />
@@ -227,165 +226,163 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
         </h2>
         
         {/* Show Add button for Admin AND Principal */}
-        {!isFormOpen && (
-            <button 
-            onClick={handleOpenAdd}
-            className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm transition-all"
-            >
-            <Plus size={18} />
-            {userRole === UserRole.PRINCIPAL ? 'إضافة مدرسة جديدة' : 'إضافة مدرسة'}
-            </button>
-        )}
+        <button 
+        onClick={handleOpenAdd}
+        className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm transition-all text-sm font-bold"
+        >
+        <Plus size={18} />
+        {userRole === UserRole.PRINCIPAL ? 'مدرسة جديدة' : 'إضافة'}
+        </button>
       </div>
 
-      {/* Add/Edit Form */}
+      {/* Add/Edit Modal */}
       {isFormOpen && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fade-in ring-1 ring-primary-100">
-          <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-              <h3 className="font-bold text-lg text-primary-800">
-                  {editingId ? 'تعديل بيانات المدرسة' : 'بيانات المدرسة الجديدة'}
-              </h3>
-              <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-gray-600">
-                  <X size={20}/>
-              </button>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">اسم المدرسة <span className="text-red-500">*</span></label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                value={formData.name || ''}
-                onChange={e => setFormData({...formData, name: e.target.value})}
-                placeholder="مثال: مدرسة الرياض النموذجية"
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">الرقم الوزاري <span className="text-red-500">*</span></label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                value={formData.ministryId || ''}
-                onChange={e => setFormData({...formData, ministryId: e.target.value})}
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">إدارة التعليم</label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                value={formData.educationOffice || ''}
-                onChange={e => setFormData({...formData, educationOffice: e.target.value})}
-                placeholder="مثال: إدارة تعليم الرياض"
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">العام الدراسي</label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                value={formData.academicYear || ''}
-                onChange={e => setFormData({...formData, academicYear: e.target.value})}
-                placeholder="مثال: 1445 هـ"
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">المرحلة التعليمية</label>
-                <select 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
-                value={formData.stage || ''}
-                onChange={e => setFormData({...formData, stage: e.target.value})}
-                >
-                <option value="">اختر المرحلة</option>
-                <option value="الابتدائية">الابتدائية</option>
-                <option value="المتوسطة">المتوسطة</option>
-                <option value="الثانوية">الثانوية</option>
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">نوع المدرسة</label>
-                <select 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
-                value={formData.type || ''}
-                onChange={e => setFormData({...formData, type: e.target.value})}
-                >
-                <option value="">اختر النوع</option>
-                <option value="بنين">بنين</option>
-                <option value="بنات">بنات</option>
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">اسم مدير المدرسة</label>
-                <input 
-                type="text" 
-                className={`w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none ${userRole === UserRole.PRINCIPAL ? 'bg-gray-50 text-gray-500' : ''}`}
-                value={formData.managerName || ''}
-                onChange={e => setFormData({...formData, managerName: e.target.value})}
-                disabled={userRole === UserRole.PRINCIPAL} // Lock for principals
-                />
-            </div>
-            
-            {/* Show Manager ID field only if NOT Principal (Admin only) or allow reading if needed */}
-            <div className={userRole === UserRole.PRINCIPAL ? 'hidden' : ''}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">رقم هوية المدير</label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-                placeholder="10xxxxxxxx"
-                value={formData.managerNationalId || ''}
-                onChange={e => setFormData({...formData, managerNationalId: e.target.value})}
-                />
-            </div>
-
-            <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">اسم مقيم الأداء</label>
-                <input 
-                type="text" 
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                value={formData.evaluatorName || ''}
-                onChange={e => setFormData({...formData, evaluatorName: e.target.value})}
-                />
-            </div>
-          </div>
-          
-          {/* Footer Buttons including Delete */}
-          <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-100">
-             <div className="w-full sm:w-auto">
-                {editingId && (
-                    <button 
-                        onClick={async () => {
-                            const success = await handleDeleteSchool(editingId);
-                            if (success) {
-                                setIsFormOpen(false);
-                                setEditingId(null);
-                                setFormData({});
-                            }
-                        }}
-                        className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-2"
-                    >
-                        <Trash2 size={18} /> حذف المدرسة
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
+                    <h3 className="font-bold text-lg text-primary-800">
+                        {editingId ? 'تعديل بيانات المدرسة' : 'بيانات المدرسة الجديدة'}
+                    </h3>
+                    <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-gray-600">
+                        <X size={20}/>
                     </button>
-                )}
-             </div>
-             
-             <div className="flex gap-2 w-full sm:w-auto justify-end">
-                <button 
-                  onClick={() => setIsFormOpen(false)} 
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  إلغاء
-                </button>
-                <button 
-                  onClick={handleSaveSchool}
-                  disabled={isSaving}
-                  className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
-                >
-                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? <CheckSquare size={18}/> : <Plus size={18} />)}
-                  {editingId ? 'حفظ التعديلات' : 'إضافة المدرسة'}
-                </button>
-             </div>
-          </div>
+                </div>
+                
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">اسم المدرسة <span className="text-red-500">*</span></label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                        value={formData.name || ''}
+                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        placeholder="مثال: مدرسة الرياض النموذجية"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">الرقم الوزاري <span className="text-red-500">*</span></label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                        value={formData.ministryId || ''}
+                        onChange={e => setFormData({...formData, ministryId: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">إدارة التعليم</label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                        value={formData.educationOffice || ''}
+                        onChange={e => setFormData({...formData, educationOffice: e.target.value})}
+                        placeholder="مثال: إدارة تعليم الرياض"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">العام الدراسي</label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                        value={formData.academicYear || ''}
+                        onChange={e => setFormData({...formData, academicYear: e.target.value})}
+                        placeholder="مثال: 1445 هـ"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">المرحلة التعليمية</label>
+                        <select 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                        value={formData.stage || ''}
+                        onChange={e => setFormData({...formData, stage: e.target.value})}
+                        >
+                        <option value="">اختر المرحلة</option>
+                        <option value="الابتدائية">الابتدائية</option>
+                        <option value="المتوسطة">المتوسطة</option>
+                        <option value="الثانوية">الثانوية</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">نوع المدرسة</label>
+                        <select 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                        value={formData.type || ''}
+                        onChange={e => setFormData({...formData, type: e.target.value})}
+                        >
+                        <option value="">اختر النوع</option>
+                        <option value="بنين">بنين</option>
+                        <option value="بنات">بنات</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">اسم مدير المدرسة</label>
+                        <input 
+                        type="text" 
+                        className={`w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none ${userRole === UserRole.PRINCIPAL ? 'bg-gray-50 text-gray-500' : ''}`}
+                        value={formData.managerName || ''}
+                        onChange={e => setFormData({...formData, managerName: e.target.value})}
+                        disabled={userRole === UserRole.PRINCIPAL} // Lock for principals
+                        />
+                    </div>
+                    
+                    <div className={userRole === UserRole.PRINCIPAL ? 'hidden' : ''}>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">رقم هوية المدير</label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none font-mono"
+                        placeholder="10xxxxxxxx"
+                        value={formData.managerNationalId || ''}
+                        onChange={e => setFormData({...formData, managerNationalId: e.target.value})}
+                        />
+                    </div>
+
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">اسم مقيم الأداء</label>
+                        <input 
+                        type="text" 
+                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                        value={formData.evaluatorName || ''}
+                        onChange={e => setFormData({...formData, evaluatorName: e.target.value})}
+                        />
+                    </div>
+                </div>
+                
+                <div className="p-6 bg-gray-50 border-t flex flex-col-reverse sm:flex-row justify-between items-center gap-4 rounded-b-xl sticky bottom-0">
+                    <div className="w-full sm:w-auto">
+                        {editingId && (
+                            <button 
+                                onClick={async () => {
+                                    const success = await handleDeleteSchool(editingId);
+                                    if (success) {
+                                        setIsFormOpen(false);
+                                        setEditingId(null);
+                                        setFormData({});
+                                    }
+                                }}
+                                className="w-full sm:w-auto px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                            >
+                                <Trash2 size={18} /> حذف
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div className="flex gap-2 w-full sm:w-auto justify-end">
+                        <button 
+                        onClick={() => setIsFormOpen(false)} 
+                        className="flex-1 sm:flex-none px-4 py-2 text-gray-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-gray-200"
+                        >
+                        إلغاء
+                        </button>
+                        <button 
+                        onClick={handleSaveSchool}
+                        disabled={isSaving}
+                        className="flex-1 sm:flex-none bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm transition-colors font-bold"
+                        >
+                        {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? <CheckSquare size={18}/> : <Plus size={18} />)}
+                        {editingId ? 'حفظ' : 'إضافة'}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
@@ -439,7 +436,7 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
                       </div>
                   </div>
                   <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
-                      <button onClick={() => setViewSchool(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
+                      <button onClick={() => setViewSchool(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 font-bold text-sm">إغلاق</button>
                   </div>
               </div>
           </div>
@@ -451,10 +448,10 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
           <Loader2 className="animate-spin text-primary-600" size={32} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6">
-          <div className="flex justify-between items-center">
+        <div className="grid grid-cols-1 gap-4">
+          <div className="flex justify-between items-center mb-2 px-1">
              <h3 className="font-bold text-gray-700 text-lg">
-                {userRole === UserRole.PRINCIPAL ? `المدارس التابعة لي (${schools.length})` : `المدارس المسجلة (${schools.length})`}
+                {userRole === UserRole.PRINCIPAL ? `المدارس (${schools.length})` : `المدارس المسجلة (${schools.length})`}
              </h3>
           </div>
           
@@ -467,35 +464,36 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
           )}
 
           {schools.map(school => (
-            <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-shadow">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
+            <div key={school.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-shadow relative">
+              <div className="flex-1 w-full">
+                <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
                   <div className="bg-primary-50 p-2 rounded-lg">
                       <Building className="text-primary-600" size={20} />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-900">{school.name}</h4>
-                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{school.stage}</span>
-                  <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">{school.ministryId}</span>
+                  <h4 className="text-lg md:text-xl font-bold text-gray-900">{school.name}</h4>
+                  <div className="flex gap-1">
+                    <span className="bg-blue-100 text-blue-800 text-[10px] md:text-xs px-2 py-1 rounded-full whitespace-nowrap">{school.stage}</span>
+                    <span className="bg-gray-100 text-gray-600 text-[10px] md:text-xs px-2 py-1 rounded-full whitespace-nowrap font-mono">{school.ministryId}</span>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-4 text-sm text-gray-500 mr-11">
+                <div className="flex flex-col md:flex-row md:flex-wrap gap-2 md:gap-4 text-xs md:text-sm text-gray-500 md:mr-11">
                   {school.educationOffice && <span className="flex items-center gap-1">إدارة: {school.educationOffice}</span>}
-                  {school.academicYear && <span className="flex items-center gap-1">عام: {school.academicYear}</span>}
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400"></span> المدير: {school.managerName || 'غير محدد'}</span>
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-100">
+              <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-3 md:pt-0 mt-2 md:mt-0 justify-end">
+                <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-100 w-full md:w-auto justify-evenly md:justify-start">
                   <button 
                     onClick={() => setViewSchool(school)}
-                    className="p-2 hover:bg-white hover:text-blue-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    className="p-2 hover:bg-white hover:text-blue-600 hover:shadow rounded-md text-gray-500 transition-all flex-1 md:flex-none flex justify-center" 
                     title="عرض التفاصيل"
                   >
                       <Eye size={18} />
                   </button>
                   <button 
                     onClick={() => handleEditSchool(school)}
-                    className="p-2 hover:bg-white hover:text-green-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    className="p-2 hover:bg-white hover:text-green-600 hover:shadow rounded-md text-gray-500 transition-all flex-1 md:flex-none flex justify-center" 
                     title="تعديل"
                   >
                       <Edit2 size={18} />
@@ -505,7 +503,7 @@ export default function SchoolManagement({ userRole, schoolId, userName, nationa
                   <div className="w-px bg-gray-200 mx-1"></div>
                   <button 
                     onClick={() => handleDeleteSchool(school.id)} 
-                    className="p-2 hover:bg-white hover:text-red-600 hover:shadow rounded-md text-gray-500 transition-all" 
+                    className="p-2 hover:bg-white hover:text-red-600 hover:shadow rounded-md text-gray-500 transition-all flex-1 md:flex-none flex justify-center" 
                     title="حذف"
                   >
                       <Trash2 size={18} />

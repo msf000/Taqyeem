@@ -142,10 +142,10 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200">جاري التقييم (مسودة)</span>;
-          case 'archived': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">مؤرشف</span>;
-          default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">{status}</span>;
+          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200 block w-fit">مكتمل</span>;
+          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 block w-fit">مسودة</span>;
+          case 'archived': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold block w-fit">مؤرشف</span>;
+          default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold block w-fit">{status}</span>;
       }
   };
 
@@ -166,8 +166,8 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
                     <ArrowRight size={20} />
                 </button>
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-800">سجل التقييمات</h2>
-                    <p className="text-gray-500 text-sm flex items-center gap-1">
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-800">سجل التقييمات</h2>
+                    <p className="text-gray-500 text-xs md:text-sm flex items-center gap-1">
                         <User size={14} /> المعلم: {teacherName}
                     </p>
                 </div>
@@ -175,13 +175,13 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
             
             <button 
                 onClick={() => onEvaluate()} // Call without ID to create new
-                className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm"
+                className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm text-sm font-bold"
             >
                 <Plus size={18} /> تقييم جديد
             </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-gray-50 md:bg-white rounded-xl md:shadow-sm md:border border-gray-200 overflow-hidden">
             {loading ? (
                 <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={32} /></div>
             ) : history.length === 0 ? (
@@ -197,63 +197,117 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
                     </button>
                 </div>
             ) : (
-                <table className="w-full text-right">
-                    <thead className="bg-gray-50 text-gray-600 text-sm">
-                        <tr>
-                            <th className="px-6 py-4">الفترة</th>
-                            <th className="px-6 py-4">تاريخ التقييم</th>
-                            <th className="px-6 py-4">الدرجة</th>
-                            <th className="px-6 py-4">الحالة</th>
-                            <th className="px-6 py-4">تاريخ الإنشاء</th>
-                            <th className="px-6 py-4"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
+                <>
+                    {/* Desktop Table */}
+                    <div className="hidden md:block">
+                        <table className="w-full text-right">
+                            <thead className="bg-gray-50 text-gray-600 text-sm">
+                                <tr>
+                                    <th className="px-6 py-4">الفترة</th>
+                                    <th className="px-6 py-4">تاريخ التقييم</th>
+                                    <th className="px-6 py-4">الدرجة</th>
+                                    <th className="px-6 py-4">الحالة</th>
+                                    <th className="px-6 py-4">تاريخ الإنشاء</th>
+                                    <th className="px-6 py-4"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {history.map((evalItem) => (
+                                    <tr key={evalItem.id} className="hover:bg-gray-50 group">
+                                        <td className="px-6 py-4 font-bold text-gray-800">{evalItem.period_name || 'بدون اسم'}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                            <div className="flex items-center gap-2">
+                                                <Calendar size={14} className="text-gray-400"/>
+                                                {evalItem.eval_date}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 font-bold text-primary-700">{evalItem.total_score}%</td>
+                                        <td className="px-6 py-4">
+                                            {getStatusBadge(evalItem.status)}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-400">
+                                            {new Date(evalItem.created_at).toLocaleDateString('ar-SA')}
+                                        </td>
+                                        <td className="px-6 py-4 text-left flex items-center justify-end gap-2">
+                                            {evalItem.status === 'completed' && (
+                                                <button 
+                                                    onClick={() => handlePrint(evalItem.id)}
+                                                    className="text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1"
+                                                    disabled={loadingPrint && printingEvalId === evalItem.id}
+                                                >
+                                                    {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={16} className="animate-spin"/> : <Printer size={16} />}
+                                                    طباعة
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => onEvaluate(evalItem.id)}
+                                                className="text-primary-600 hover:bg-primary-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                                            >
+                                                <Eye size={16} /> عرض
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(evalItem.id)}
+                                                className="text-red-500 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                                                title="حذف التقييم"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile Card List */}
+                    <div className="md:hidden flex flex-col gap-3">
                         {history.map((evalItem) => (
-                            <tr key={evalItem.id} className="hover:bg-gray-50 group">
-                                <td className="px-6 py-4 font-bold text-gray-800">{evalItem.period_name || 'بدون اسم'}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">
-                                    <div className="flex items-center gap-2">
-                                        <Calendar size={14} className="text-gray-400"/>
-                                        {evalItem.eval_date}
+                            <div key={evalItem.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <span className="text-xs text-gray-500 mb-1 block">الفترة</span>
+                                        <h4 className="font-bold text-gray-900 text-lg">{evalItem.period_name || 'بدون اسم'}</h4>
                                     </div>
-                                </td>
-                                <td className="px-6 py-4 font-bold text-primary-700">{evalItem.total_score}%</td>
-                                <td className="px-6 py-4">
-                                    {getStatusBadge(evalItem.status)}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-400">
-                                    {new Date(evalItem.created_at).toLocaleDateString('ar-SA')}
-                                </td>
-                                <td className="px-6 py-4 text-left flex items-center justify-end gap-2">
+                                    <div className="flex flex-col items-end gap-1">
+                                        <span className="text-xl font-bold text-primary-600">{evalItem.total_score}%</span>
+                                        {getStatusBadge(evalItem.status)}
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-2 text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">
+                                    <Calendar size={14}/>
+                                    تاريخ التقييم: {evalItem.eval_date}
+                                </div>
+
+                                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                                    <button 
+                                        onClick={() => onEvaluate(evalItem.id)}
+                                        className="flex-1 bg-primary-50 text-primary-700 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2"
+                                    >
+                                        <Eye size={16}/> التفاصيل
+                                    </button>
+                                    
                                     {evalItem.status === 'completed' && (
                                         <button 
                                             onClick={() => handlePrint(evalItem.id)}
-                                            className="text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1"
+                                            className="p-2 bg-gray-100 text-gray-600 rounded-lg"
                                             disabled={loadingPrint && printingEvalId === evalItem.id}
                                         >
-                                            {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={16} className="animate-spin"/> : <Printer size={16} />}
-                                            طباعة
+                                            {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={18} className="animate-spin"/> : <Printer size={18} />}
                                         </button>
                                     )}
-                                    <button 
-                                        onClick={() => onEvaluate(evalItem.id)}
-                                        className="text-primary-600 hover:bg-primary-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
-                                    >
-                                        <Eye size={16} /> عرض / تعديل
-                                    </button>
+                                    
                                     <button 
                                         onClick={() => handleDelete(evalItem.id)}
-                                        className="text-red-500 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
-                                        title="حذف التقييم"
+                                        className="p-2 bg-red-50 text-red-600 rounded-lg"
                                     >
-                                        <Trash2 size={16} />
+                                        <Trash2 size={18} />
                                     </button>
-                                </td>
-                            </tr>
+                                </div>
+                            </div>
                         ))}
-                    </tbody>
-                </table>
+                    </div>
+                </>
             )}
         </div>
     </div>
