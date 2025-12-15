@@ -288,11 +288,13 @@ export default function TeacherEvaluationDetails({ teacherId, onBack }: TeacherE
   };
 
   const getStatusBadge = (status: string) => {
-      switch(status) {
-          case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200 w-fit">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 w-fit">جاري التقييم (مسودة)</span>;
-          default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold w-fit">{status}</span>;
+      if (status === 'completed' || status === EvaluationStatus.COMPLETED) {
+          return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200 w-fit">مكتمل</span>;
       }
+      if (status === 'draft' || status === EvaluationStatus.DRAFT) {
+          return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 w-fit">جاري التقييم (مسودة)</span>;
+      }
+      return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold w-fit">{status}</span>;
   };
 
   // --- PRINT VIEW ---

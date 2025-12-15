@@ -323,6 +323,7 @@ export default function App() {
                     teacherId={selectedTeacherId} 
                     evaluationId={selectedEvaluationId}
                     onBack={handleBackToHistory} 
+                    userRole={currentUser?.role} // Pass Role for Permissions
                 />
             );
         }
@@ -338,7 +339,7 @@ export default function App() {
           nationalId={currentUser?.nationalId} // Added nationalId
           onNavigate={(tab) => setActiveTab(tab)} 
           onImportClick={() => { setActiveTab(Tab.TEACHERS); }}
-          onEvaluate={(teacherId) => navigateToEvaluate(teacherId)} // Pass evaluate function
+          onEvaluate={(teacherId, evaluationId) => navigateToEvaluate(teacherId, evaluationId)} // Updated to pass evalId
         />;
       case Tab.SCHOOLS:
         return <SchoolManagement 
@@ -349,7 +350,7 @@ export default function App() {
         />;
       case Tab.TEACHERS:
         return <TeacherManagement 
-            onEvaluate={(id) => navigateToEvaluate(id)} 
+            onEvaluate={(id, evalId) => navigateToEvaluate(id, evalId)} 
             onViewHistory={navigateToHistory}
             userRole={currentUser?.role}
             schoolId={currentUser?.schoolId}
@@ -377,6 +378,7 @@ export default function App() {
             schoolId={currentUser?.schoolId} 
             userRole={currentUser?.role}
             nationalId={currentUser?.nationalId} // ADDED nationalId
+            onViewEvaluation={(teacherId, evalId) => navigateToEvaluate(teacherId, evalId)} // Add navigation callback
         />;
       case Tab.TEACHER_EVALUATION:
          return <TeacherEvaluationDetails teacherId={currentUser?.id || ''} onBack={() => setActiveTab(Tab.DASHBOARD)} />;
@@ -391,7 +393,7 @@ export default function App() {
             nationalId={currentUser?.nationalId}
             onNavigate={(tab) => setActiveTab(tab)} 
             onImportClick={() => {}} 
-            onEvaluate={(teacherId) => navigateToEvaluate(teacherId)}
+            onEvaluate={(teacherId, evaluationId) => navigateToEvaluate(teacherId, evaluationId)}
         />;
     }
   };

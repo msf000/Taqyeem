@@ -56,6 +56,7 @@ export interface Teacher {
   roles?: UserRole[]; // New field for multiple roles support
   schoolId: string;
   status: EvaluationStatus;
+  lastEvaluationId?: string; // Added to support resuming drafts
   mobile: string;
   password?: string;
 }

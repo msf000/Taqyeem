@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, Save, Printer, ArrowRight, CheckCircle2, Loader2, AlertCircle, Calendar, ExternalLink, FileText, CheckSquare, TrendingUp, ThumbsUp, XCircle, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, Star, ArrowLeft, Maximize2, Award, HeartHandshake, Wand2, Sparkles, Eye, EyeOff } from 'lucide-react';
-import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, ArrowRight, CheckCircle2, Loader2, Calendar, ExternalLink, CheckSquare, TrendingUp, ThumbsUp, LayoutList, MessageSquare, ChevronDown, ChevronUp, Target, ArrowLeft, Award, Sparkles, Eye, Wand2, Printer, FileText, Lock, RotateCcw } from 'lucide-react';
+import { EvaluationIndicator, EvaluationScore, TeacherCategory, SchoolEvent, EvaluationStatus, UserRole } from '../types';
 import PrintView from './PrintView';
 import { supabase } from '../supabaseClient';
 import { GoogleGenAI } from "@google/genai";
@@ -10,15 +10,19 @@ interface EvaluationFlowProps {
   teacherId: string;
   evaluationId?: string;
   onBack: () => void;
+  userRole?: UserRole;
 }
 
-export default function EvaluationFlow({ teacherId, evaluationId, onBack }: EvaluationFlowProps) {
+export default function EvaluationFlow({ teacherId, evaluationId, onBack, userRole }: EvaluationFlowProps) {
   const [step, setStep] = useState<'period' | 'scoring' | 'summary' | 'print'>('period');
   const [activeIndicatorIndex, setActiveIndicatorIndex] = useState<number | null>(null); // New state for Card View
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
+  // Read Only State
+  const [isReadOnly, setIsReadOnly] = useState(false);
+
   // Mobile View States
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
 
@@ -199,8 +203,15 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
               setScores(evalData.scores || {});
               setGeneralNotes(evalData.general_notes || '');
               
-              if (Object.keys(evalData.scores || {}).length > 0) {
-                 setStep('scoring');
+              // Set Read Only if Completed
+              if (evalData.status === 'completed') {
+                  setIsReadOnly(true);
+                  setStep('scoring'); // Default to scoring view for review
+              } else {
+                  // Only move to scoring automatically if we have data
+                  if (Object.keys(evalData.scores || {}).length > 0) {
+                     setStep('scoring');
+                  }
               }
             }
         }
@@ -216,6 +227,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
   // --- AI Text Generation ---
   const generateAIContent = async (indId: string | 'general', field: 'strengths' | 'improvement' | 'notes' | 'general_notes', currentText: string) => {
+      if (isReadOnly) return;
       const fieldKey = `${indId}-${field}`;
       setGeneratingField(fieldKey);
 
@@ -291,7 +303,8 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   };
 
   // --- Save Logic ---
-  const saveToDb = useCallback(async (isManual = false): Promise<boolean> => {
+  const saveToDb = useCallback(async (isManual = false, targetStatus?: EvaluationStatus): Promise<boolean> => {
+      if (isReadOnly) return false;
       if (!teacherId || !period.name) {
           if (isManual) alert("يرجى تحديد فترة التقييم");
           return false;
@@ -299,6 +312,20 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
       setSaveStatus('saving');
       try {
+        // Map EvaluationStatus (Arabic Enum) to DB Status (English String)
+        let dbStatus = 'draft';
+        if (targetStatus === EvaluationStatus.COMPLETED) {
+            dbStatus = 'completed';
+        }
+        
+        // Safety: If calculating completion, ensure strict validation
+        if (dbStatus === 'completed') {
+             if (Object.keys(scores).length < indicators.length) {
+                 if(isManual) alert("تنبيه: لم يتم تقييم جميع المؤشرات بعد.");
+                 // We still allow saving as completed if user forces it, or revert to draft
+             }
+        }
+
         const payload: any = {
             teacher_id: teacherId,
             school_id: teacherDetails.schoolId || null, 
@@ -307,7 +334,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
             scores: scores,
             general_notes: generalNotes,
             total_score: calculateTotal(),
-            status: Object.keys(scores).length === indicators.length && indicators.length > 0 ? 'completed' : 'draft',
+            status: dbStatus,
         };
 
         let query;
@@ -328,14 +355,16 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
         if (isManual) alert('فشل الحفظ: ' + getErrorMessage(error));
         return false;
       }
-  }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId]);
+  }, [period, scores, generalNotes, teacherId, currentEvalId, indicators, teacherDetails.schoolId, isReadOnly]);
 
-  // Autosave
+  // Autosave - Always saves as 'draft' to prevent accidental completion
   useEffect(() => {
-    if (isLoading || indicators.length === 0 || step !== 'scoring') return; 
-    const timeoutId = setTimeout(() => { if (period.name) saveToDb(false); }, 1500); 
+    if (isLoading || isReadOnly || indicators.length === 0 || step !== 'scoring') return; 
+    const timeoutId = setTimeout(() => { 
+        if (period.name) saveToDb(false, EvaluationStatus.DRAFT); 
+    }, 1500); 
     return () => clearTimeout(timeoutId);
-  }, [scores, generalNotes]);
+  }, [scores, generalNotes, isReadOnly]);
 
   // --- Smart Generator Helpers ---
   const getFeedbackForIndicator = (indicatorText: string, category: string) => {
@@ -369,6 +398,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   };
 
   const handleSubCriteriaChange = (indicator: EvaluationIndicator, criteriaIdx: number, value: number) => {
+      if (isReadOnly) return;
       // 1. Update subScores
       const currentScoreData = scores[indicator.id] || { 
           indicatorId: indicator.id, 
@@ -446,6 +476,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
   };
 
   const updateField = (indicatorId: string, field: keyof EvaluationScore, value: any) => {
+    if (isReadOnly) return;
     setScores(prev => {
       const current: EvaluationScore = prev[indicatorId] || {
         indicatorId,
@@ -471,14 +502,68 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
   const handleStartEvaluation = async () => {
       if (!period.name) return alert('يرجى اختيار الفترة');
-      const success = await saveToDb(true);
+
+      // Check if a draft already exists for this teacher/period before creating a new one
+      if (!currentEvalId) {
+          try {
+              const { data: existingDraft } = await supabase
+                  .from('evaluations')
+                  .select('id, scores, general_notes')
+                  .eq('teacher_id', teacherId)
+                  .eq('period_name', period.name)
+                  .single();
+              
+              if (existingDraft) {
+                  // Resume existing
+                  setCurrentEvalId(existingDraft.id);
+                  setScores(existingDraft.scores || {});
+                  setGeneralNotes(existingDraft.general_notes || '');
+                  setStep('scoring');
+                  return;
+              }
+          } catch (e) {
+              // Ignore error (PGRST116 for no rows found)
+          }
+      }
+
+      // Explicitly set as Draft on start
+      const success = await saveToDb(true, EvaluationStatus.DRAFT);
       if (success) setStep('scoring');
   };
 
   const handleFinish = async () => {
-      const success = await saveToDb(true);
+      if (isReadOnly) return;
+      // Validate completeness
+      if (Object.keys(scores).length < indicators.length) {
+          if (!confirm('لم يتم تقييم جميع المؤشرات بعد. هل أنت متأكد من اعتماد التقييم؟')) return;
+      } else {
+          if (!confirm('سيتم اعتماد التقييم نهائياً ولا يمكن تعديله لاحقاً. هل أنت متأكد؟')) return;
+      }
+
+      // Explicitly set as Completed
+      const success = await saveToDb(true, EvaluationStatus.COMPLETED);
       if (success) {
           onBack();
+      }
+  };
+
+  const handleRevertToDraft = async () => {
+      if (!currentEvalId) return;
+      if (!window.confirm('هل أنت متأكد من إعادة فتح التقييم للتعديل؟ سيتم تحويل الحالة إلى "مسودة" لتتمكن من تغيير الدرجات.')) return;
+
+      setIsLoading(true);
+      try {
+          const { error } = await supabase.from('evaluations').update({ status: 'draft' }).eq('id', currentEvalId);
+          if (error) throw error;
+          
+          setIsReadOnly(false);
+          setStep('scoring'); // Go to scoring to edit
+          alert('تم إعادة فتح التقييم بنجاح.');
+      } catch (error: any) {
+          console.error('Error reverting:', error);
+          alert('فشل إعادة فتح التقييم: ' + error.message);
+      } finally {
+          setIsLoading(false);
       }
   };
 
@@ -506,6 +591,14 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-20">
+      {/* Read Only Banner */}
+      {isReadOnly && (
+          <div className="bg-yellow-50 border-b border-yellow-200 p-3 text-center text-yellow-800 text-sm font-bold flex justify-center items-center gap-2 sticky top-0 z-50">
+              <Lock size={16} />
+              هذا التقييم مكتمل ولا يمكن تعديله (وضع القراءة فقط)
+          </div>
+      )}
+
       {/* Header Info */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
@@ -524,10 +617,12 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                 <span className="text-3xl font-bold text-primary-600">{calculateTotal().toFixed(1)}</span>
                 <span className="text-sm bg-gray-100 px-2 py-1 rounded">{getIndicatorMasteryLevel(calculateTotal(), 100).label}</span>
             </div>
-            <div className="flex items-center gap-1 mt-2 text-xs">
-                 {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ...</span>}
-                 {saveStatus === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> تم الحفظ</span>}
-            </div>
+            {!isReadOnly && (
+                <div className="flex items-center gap-1 mt-2 text-xs">
+                    {saveStatus === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> جاري الحفظ (مسودة)...</span>}
+                    {saveStatus === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> تم الحفظ</span>}
+                </div>
+            )}
         </div>
       </div>
 
@@ -545,7 +640,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
            </div>
            <div className="flex justify-end">
               <button disabled={!period.name} onClick={handleStartEvaluation} className="bg-primary-600 text-white px-8 py-3 rounded-xl hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 font-bold transition-all">
-                {currentEvalId ? 'متابعة التقييم' : 'بدء التقييم'} <ChevronLeft size={18} />
+                {currentEvalId ? 'متابعة التقييم (مسودة)' : 'بدء تقييم جديد'} <ChevronLeft size={18} />
               </button>
            </div>
         </div>
@@ -596,7 +691,7 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                             {isDone && <span className={`text-[10px] px-1.5 py-0.5 rounded ${mastery.color}`}>{mastery.label}</span>}
                                         </div>
                                         <button className="text-primary-600 text-sm font-bold flex items-center gap-1 group-hover:gap-2 transition-all">
-                                            تقييم <ChevronLeft size={16}/>
+                                            {isReadOnly ? 'عرض' : 'تقييم'} <ChevronLeft size={16}/>
                                         </button>
                                     </div>
                                 </div>
@@ -720,10 +815,11 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                         <button
                                                             key={rating}
                                                             onClick={() => handleSubCriteriaChange(activeInd, idx, rating)}
-                                                            className={`w-12 h-12 md:w-10 md:h-10 rounded-lg flex items-center justify-center font-bold text-lg md:text-sm transition-all border ${
-                                                                currentSubScore === rating 
-                                                                ? 'bg-primary-600 text-white border-primary-600 scale-110 shadow-md' 
-                                                                : 'bg-white text-gray-400 border-gray-200 hover:border-primary-300'
+                                                            disabled={isReadOnly}
+                                                            className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                                                                currentSubScore === rating
+                                                                ? (rating >= 4 ? 'bg-green-600 text-white scale-110 shadow-md' : rating === 3 ? 'bg-blue-600 text-white scale-110 shadow-md' : 'bg-red-500 text-white scale-110 shadow-md')
+                                                                : (isReadOnly ? 'bg-gray-100 text-gray-300' : 'bg-gray-50 text-gray-400 hover:bg-gray-200')
                                                             }`}
                                                         >
                                                             {rating}
@@ -731,98 +827,82 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
                                                     ))}
                                                 </div>
                                             </div>
-                                        )
-                                    }) : (
-                                        <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                                            <p className="text-gray-500 mb-4">لا توجد معايير تفصيلية لهذا المؤشر. يرجى إدخال الدرجة الكلية مباشرة.</p>
-                                            <input 
-                                                type="number" max={activeInd.weight} min={0}
-                                                className="w-24 text-center border-2 border-primary-200 rounded-lg p-2 text-xl font-bold focus:ring-2 focus:ring-primary-500 outline-none"
-                                                value={scores[activeInd.id]?.score || ''}
-                                                onChange={(e) => handleSubCriteriaChange(activeInd, 0, parseFloat(e.target.value))} // Special case fallback
-                                            />
-                                        </div>
-                                    )}
+                                        );
+                                    }) : <p className="text-gray-500 italic">لا توجد معايير تفصيلية.</p>}
                                 </div>
 
-                                {/* Notes Section with Auto-Generation Info */}
-                                <div className="mt-8 pt-6 border-t border-gray-100 space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Text Inputs for Indicator */}
+                                <div className="mt-8 border-t pt-6 space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Strengths */}
                                         <div>
-                                            <label className="block text-xs font-bold text-green-700 mb-2 flex items-center justify-between">
-                                                <span>نقاط القوة / أهداف مستقبلية (تلقائي)</span>
-                                                <div className="flex items-center gap-2">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                                    <ThumbsUp size={16} className="text-blue-600"/> نقاط القوة
+                                                </label>
+                                                {!isReadOnly && (
                                                     <button 
                                                         onClick={() => generateAIContent(activeInd.id, 'strengths', scores[activeInd.id]?.strengths || '')}
                                                         disabled={generatingField === `${activeInd.id}-strengths`}
-                                                        className="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-1 rounded-md transition-colors"
-                                                        title="إعادة صياغة / توليد بالذكاء الاصطناعي"
+                                                        className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors"
                                                     >
-                                                        {generatingField === `${activeInd.id}-strengths` ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                                        {generatingField === `${activeInd.id}-strengths` ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                                                        صياغة بالذكاء الاصطناعي
                                                     </button>
-                                                    <Award size={14} className="text-green-600"/>
-                                                </div>
-                                            </label>
+                                                )}
+                                            </div>
                                             <textarea 
-                                                className="w-full border border-green-100 bg-green-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none"
-                                                placeholder="سيتم صياغة نقاط القوة بتنوع واحترافية..."
+                                                rows={4}
+                                                className="w-full border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors disabled:bg-gray-100"
+                                                placeholder="أبرز نقاط القوة لدى المعلم..."
                                                 value={scores[activeInd.id]?.strengths || ''}
                                                 onChange={(e) => updateField(activeInd.id, 'strengths', e.target.value)}
+                                                disabled={isReadOnly}
                                             />
                                         </div>
+
+                                        {/* Improvements */}
                                         <div>
-                                            <label className="block text-xs font-bold text-yellow-700 mb-2 flex items-center justify-between">
-                                                <span>خطة التطوير / تطلعات إثرائية</span>
-                                                <div className="flex items-center gap-2">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                                    <TrendingUp size={16} className="text-orange-600"/> فرص التحسين
+                                                </label>
+                                                {!isReadOnly && (
                                                     <button 
                                                         onClick={() => generateAIContent(activeInd.id, 'improvement', scores[activeInd.id]?.improvement || '')}
                                                         disabled={generatingField === `${activeInd.id}-improvement`}
-                                                        className="text-yellow-600 hover:text-yellow-800 bg-yellow-50 hover:bg-yellow-100 p-1 rounded-md transition-colors"
-                                                        title="إعادة صياغة / توليد بالذكاء الاصطناعي"
+                                                        className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors"
                                                     >
-                                                        {generatingField === `${activeInd.id}-improvement` ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                                        {generatingField === `${activeInd.id}-improvement` ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                                                        صياغة بالذكاء الاصطناعي
                                                     </button>
-                                                    <HeartHandshake size={14} className="text-yellow-600"/>
-                                                </div>
-                                            </label>
+                                                )}
+                                            </div>
                                             <textarea 
-                                                className="w-full border border-yellow-100 bg-yellow-50/30 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-yellow-500 outline-none resize-none leading-relaxed"
-                                                placeholder="سيتم كتابة الخطة أو التطلعات المستقبلية..."
+                                                rows={4}
+                                                className="w-full border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors disabled:bg-gray-100"
+                                                placeholder="المجالات التي تحتاج إلى تطوير..."
                                                 value={scores[activeInd.id]?.improvement || ''}
                                                 onChange={(e) => updateField(activeInd.id, 'improvement', e.target.value)}
+                                                disabled={isReadOnly}
                                             />
                                         </div>
                                     </div>
                                     
-                                    {/* Indicator Notes Field */}
+                                    {/* Optional Notes */}
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-700 mb-2 flex items-center justify-between">
-                                            <span>ملاحظات إضافية على المؤشر</span>
-                                            <button 
-                                                onClick={() => generateAIContent(activeInd.id, 'notes', scores[activeInd.id]?.notes || '')}
-                                                disabled={generatingField === `${activeInd.id}-notes`}
-                                                className="text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 p-1 rounded-md transition-colors"
-                                                title="تحسين الصياغة"
-                                            >
-                                                {generatingField === `${activeInd.id}-notes` ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-                                            </button>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                            <MessageSquare size={16} className="text-gray-400"/> ملاحظات إضافية (اختياري)
                                         </label>
                                         <textarea 
-                                            className="w-full border border-gray-200 bg-gray-50 rounded-lg p-3 text-sm h-20 focus:ring-2 focus:ring-primary-500 outline-none resize-none"
-                                            placeholder="أي ملاحظات أخرى تتعلق بهذا المؤشر..."
+                                            rows={2}
+                                            className="w-full border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors disabled:bg-gray-100"
+                                            placeholder="أي ملاحظات أخرى..."
                                             value={scores[activeInd.id]?.notes || ''}
                                             onChange={(e) => updateField(activeInd.id, 'notes', e.target.value)}
+                                            disabled={isReadOnly}
                                         />
                                     </div>
-                                </div>
-
-                                <div className="mt-6 flex justify-end">
-                                    <button 
-                                        onClick={() => navigateIndicator('next')}
-                                        className="bg-gray-800 text-white px-8 py-3 rounded-xl hover:bg-gray-900 shadow-lg font-bold flex items-center gap-2"
-                                    >
-                                        {activeIndicatorIndex < indicators.length - 1 ? 'حفظ والانتقال للتالي' : 'حفظ وإنهاء التقييم'} <ChevronLeft size={18} />
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -833,52 +913,83 @@ export default function EvaluationFlow({ teacherId, evaluationId, onBack }: Eval
       )}
 
       {step === 'summary' && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in max-w-3xl mx-auto mt-8">
-             <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
-                    <CheckCircle2 size={40} />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800">ملخص التقييم النهائي</h2>
-                <p className="text-gray-500">تم رصد الدرجات بنجاح</p>
-             </div>
+          <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200 animate-fade-in max-w-4xl mx-auto">
+              <div className="text-center mb-10">
+                  <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-green-50">
+                      <Award size={40} />
+                  </div>
+                  <h2 className="text-3xl font-bold text-gray-800 mb-2">ملخص التقييم النهائي</h2>
+                  <p className="text-gray-500">مراجعة النتائج والتوصيات قبل الاعتماد النهائي</p>
+              </div>
 
-             <div className="bg-gray-50 p-6 rounded-xl mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
-                <div className="text-center md:text-right">
-                    <div className="text-sm text-gray-500 mb-1">النتيجة النهائية</div>
-                    <div className="text-4xl font-bold text-primary-700">{calculateTotal().toFixed(1)}%</div>
-                </div>
-                <div className="text-center md:text-right">
-                    <div className="text-sm text-gray-500 mb-1">التقدير اللفظي</div>
-                    <div className="text-2xl font-bold text-gray-800">{getIndicatorMasteryLevel(calculateTotal(), 100).label}</div>
-                </div>
-             </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                      <h4 className="text-gray-500 text-sm font-bold mb-2">النتيجة النهائية</h4>
+                      <div className="flex items-baseline gap-2">
+                          <span className="text-5xl font-black text-gray-900">{calculateTotal().toFixed(1)}</span>
+                          <span className="text-gray-400 font-medium">/ 100</span>
+                      </div>
+                      <div className={`mt-4 inline-block px-4 py-1.5 rounded-full text-sm font-bold ${getIndicatorMasteryLevel(calculateTotal(), 100).color}`}>
+                          التقدير: {getIndicatorMasteryLevel(calculateTotal(), 100).label}
+                      </div>
+                  </div>
 
-             {/* General Notes Section */}
-             <div className="mb-8">
-                 <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center justify-between">
-                     <span>ملاحظات عامة / توصيات إدارية</span>
-                     <button 
-                        onClick={() => generateAIContent('general', 'general_notes', generalNotes)}
-                        disabled={generatingField === `general-general_notes`}
-                        className="text-primary-600 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-3 py-1 rounded-md transition-colors text-xs flex items-center gap-1"
-                     >
-                        {generatingField === `general-general_notes` ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                        توليد ملخص بالذكاء الاصطناعي
-                     </button>
-                 </label>
-                 <textarea 
-                    className="w-full border border-gray-300 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-primary-500 outline-none resize-none leading-relaxed"
-                    placeholder="اكتب هنا أي ملاحظات عامة أو توصيات للمدير أو المعلم..."
-                    value={generalNotes}
-                    onChange={(e) => setGeneralNotes(e.target.value)}
-                 />
-             </div>
+                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 flex flex-col">
+                      <div className="flex justify-between items-center mb-4">
+                          <h4 className="text-gray-800 font-bold flex items-center gap-2">
+                              <FileText size={18} className="text-primary-600"/> الملاحظات العامة
+                          </h4>
+                          {!isReadOnly && (
+                              <button 
+                                  onClick={() => generateAIContent('general', 'general_notes', generalNotes)}
+                                  disabled={generatingField === 'general-general_notes'}
+                                  className="text-xs bg-white border border-purple-200 text-purple-700 px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-purple-50 transition-colors shadow-sm"
+                              >
+                                  {generatingField === 'general-general_notes' ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
+                                  صياغة ذكية
+                              </button>
+                          )}
+                      </div>
+                      <textarea 
+                          rows={4}
+                          className="w-full border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-white flex-1 disabled:bg-gray-100"
+                          placeholder="اكتب توجيهات عامة للمعلم..."
+                          value={generalNotes}
+                          onChange={(e) => setGeneralNotes(e.target.value)}
+                          disabled={isReadOnly}
+                      />
+                  </div>
+              </div>
 
-             <div className="flex justify-center gap-4">
-                <button onClick={() => setStep('scoring')} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">عودة للتعديل</button>
-                <button onClick={() => setStep('print')} className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center gap-2"><Printer size={18} /> طباعة التقرير</button>
-                <button onClick={handleFinish} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold">حفظ وإغلاق</button>
-             </div>
+              <div className="flex flex-col-reverse md:flex-row justify-between items-center gap-4 pt-6 border-t border-gray-100">
+                  <button onClick={() => setStep('scoring')} className="text-gray-500 hover:text-gray-800 font-medium px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors">
+                      مراجعة المعايير
+                  </button>
+                  <div className="flex gap-3 w-full md:w-auto">
+                      {isReadOnly && (userRole === UserRole.PRINCIPAL || userRole === UserRole.ADMIN) && (
+                          <button 
+                              onClick={handleRevertToDraft}
+                              className="flex-1 md:flex-none bg-orange-50 border border-orange-200 text-orange-700 px-6 py-3 rounded-xl font-bold hover:bg-orange-100 transition-all flex items-center justify-center gap-2 shadow-sm"
+                          >
+                              <RotateCcw size={18}/> إعادة فتح للتعديل
+                          </button>
+                      )}
+                      <button 
+                          onClick={() => setStep('print')}
+                          className="flex-1 md:flex-none bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+                      >
+                          <Printer size={18}/> معاينة الطباعة
+                      </button>
+                      {!isReadOnly && (
+                          <button 
+                              onClick={handleFinish}
+                              className="flex-1 md:flex-none bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                          >
+                              <CheckCircle2 size={20}/> اعتماد التقييم
+                          </button>
+                      )}
+                  </div>
+              </div>
           </div>
       )}
     </div>

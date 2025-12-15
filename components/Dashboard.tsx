@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2, RefreshCw, XCircle, Clock, Timer, Award } from 'lucide-react';
+import { School, Users, Upload, FileBarChart, ArrowRightLeft, MessageSquareWarning, CreditCard, Loader2, ShieldCheck, UserCheck, BookOpen, Star, AlertCircle, Calendar, Settings, UserCircle, Eye, ChevronLeft, CheckCircle2, RefreshCw, XCircle, Clock, Timer, Award, PlayCircle } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole, SchoolEvent, EvaluationData } from '../types';
 
@@ -12,7 +12,7 @@ interface DashboardProps {
   nationalId?: string; // Added prop
   onNavigate: (tab: any) => void;
   onImportClick: () => void;
-  onEvaluate?: (teacherId: string) => void; // Added for pending list action
+  onEvaluate?: (teacherId: string, evaluationId?: string) => void; // Updated signature
 }
 
 const QuickAccessCard = ({ icon, title, count, onClick, colorClass = "bg-white", description, gradient }: { icon: React.ReactNode, title: string, count?: number, onClick: () => void, colorClass?: string, description?: string, gradient?: string }) => (
@@ -153,12 +153,12 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                     
                     if (teacherIds.length > 0) {
                         const { count: ec } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds);
-                        const { data: completedEvalsData, count: cc } = await supabase.from('evaluations').select('teacher_id', { count: 'exact' }).in('teacher_id', teacherIds).eq('status', 'completed');
+                        const { data: evalsData, count: cc } = await supabase.from('evaluations').select('teacher_id, id, status', { count: 'exact' }).in('teacher_id', teacherIds);
                         // Count Pending Objections
                         const { count: oc } = await supabase.from('evaluations').select('*', { count: 'exact', head: true }).in('teacher_id', teacherIds).eq('objection_status', 'pending');
                         
                         evalsCount = ec || 0;
-                        completedCount = cc || 0;
+                        completedCount = evalsData?.filter(e => e.status === 'completed').length || 0;
                         objectionsCount = oc || 0;
 
                         // Fetch Recent Activity
@@ -170,9 +170,18 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                             .limit(3);
                         setRecentActivity(recent || []);
 
-                        // Fetch Pending Teachers List
-                        const evaluatedIds = new Set(completedEvalsData?.map(e => e.teacher_id));
-                        const pendingList = schoolTeachers?.filter(t => !evaluatedIds.has(t.id)).slice(0, 5) || [];
+                        // Fetch Pending Teachers List Logic (With Draft Detection)
+                        const completedTeacherIds = new Set(evalsData?.filter(e => e.status === 'completed').map(e => e.teacher_id));
+                        const draftMap = new Map(evalsData?.filter(e => e.status === 'draft').map(e => [e.teacher_id, e.id]));
+
+                        const pendingList = schoolTeachers
+                            ?.filter(t => !completedTeacherIds.has(t.id))
+                            .map(t => ({
+                                ...t,
+                                draftId: draftMap.get(t.id) || null
+                            }))
+                            .slice(0, 5) || [];
+                            
                         setPendingTeachers(pendingList);
 
                         // Fetch Active Event
@@ -426,10 +435,17 @@ export default function Dashboard({ userId, userName, userRole, schoolId, nation
                                                 </div>
                                             </div>
                                             <button 
-                                                onClick={() => onEvaluate && onEvaluate(teacher.id)}
-                                                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary-700 shadow-sm"
+                                                onClick={() => onEvaluate && onEvaluate(teacher.id, teacher.draftId)}
+                                                className={`${teacher.draftId ? 'bg-primary-600 hover:bg-primary-700' : 'bg-secondary-800 hover:bg-secondary-900'} text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2`}
                                             >
-                                                تقييم
+                                                {teacher.draftId ? (
+                                                    <>
+                                                        <PlayCircle size={14} />
+                                                        استكمال
+                                                    </>
+                                                ) : (
+                                                    'تقييم'
+                                                )}
                                             </button>
                                         </div>
                                     ))}

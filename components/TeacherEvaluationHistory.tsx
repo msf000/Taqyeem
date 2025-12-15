@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Plus, FileText, Calendar, ChevronLeft, Loader2, User, Printer, Eye, Trash2 } from 'lucide-react';
+import { ArrowRight, Plus, FileText, Calendar, ChevronLeft, Loader2, User, Printer, Eye, Trash2, PlayCircle, RotateCcw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { EvaluationStatus, EvaluationIndicator, TeacherCategory } from '../types';
 import PrintView from './PrintView';
@@ -70,6 +70,22 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
       } catch (error: any) {
           console.error("Delete error:", error);
           alert('فشل الحذف: ' + error.message);
+      }
+  };
+
+  const handleRevert = async (evalId: string) => {
+      if (!window.confirm('هل أنت متأكد من إعادة فتح التقييم للتعديل؟ سيتحول إلى "مسودة" ويمكنك تعديل الدرجات مجدداً.')) return;
+      
+      try {
+          const { error } = await supabase.from('evaluations').update({ status: 'draft' }).eq('id', evalId);
+          if (error) throw error;
+          
+          // Update local state
+          setHistory(prev => prev.map(e => e.id === evalId ? { ...e, status: 'draft' } : e));
+          alert('تم إعادة فتح التقييم بنجاح. يمكنك الآن استكمال التعديل.');
+      } catch(e: any) {
+          console.error("Revert error:", e);
+          alert('فشل الإجراء: ' + e.message);
       }
   };
 
@@ -143,7 +159,7 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
   const getStatusBadge = (status: string) => {
       switch(status) {
           case 'completed': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200 block w-fit">مكتمل</span>;
-          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 block w-fit">مسودة</span>;
+          case 'draft': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold border border-yellow-200 block w-fit">مسودة (جاري)</span>;
           case 'archived': return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold block w-fit">مؤرشف</span>;
           default: return <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold block w-fit">{status}</span>;
       }
@@ -230,21 +246,41 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
                                         </td>
                                         <td className="px-6 py-4 text-left flex items-center justify-end gap-2">
                                             {evalItem.status === 'completed' && (
+                                                <>
+                                                    <button 
+                                                        onClick={() => handleRevert(evalItem.id)}
+                                                        className="text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1"
+                                                        title="إعادة فتح (تعديل)"
+                                                    >
+                                                        <RotateCcw size={16} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handlePrint(evalItem.id)}
+                                                        className="text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1"
+                                                        disabled={loadingPrint && printingEvalId === evalItem.id}
+                                                    >
+                                                        {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={16} className="animate-spin"/> : <Printer size={16} />}
+                                                        طباعة
+                                                    </button>
+                                                </>
+                                            )}
+                                            
+                                            {evalItem.status === 'draft' ? (
                                                 <button 
-                                                    onClick={() => handlePrint(evalItem.id)}
-                                                    className="text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1"
-                                                    disabled={loadingPrint && printingEvalId === evalItem.id}
+                                                    onClick={() => onEvaluate(evalItem.id)}
+                                                    className="bg-primary-600 text-white hover:bg-primary-700 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shadow-sm"
                                                 >
-                                                    {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={16} className="animate-spin"/> : <Printer size={16} />}
-                                                    طباعة
+                                                    <PlayCircle size={16} /> استكمال
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => onEvaluate(evalItem.id)}
+                                                    className="text-primary-600 hover:bg-primary-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                                                >
+                                                    <Eye size={16} /> عرض
                                                 </button>
                                             )}
-                                            <button 
-                                                onClick={() => onEvaluate(evalItem.id)}
-                                                className="text-primary-600 hover:bg-primary-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
-                                            >
-                                                <Eye size={16} /> عرض
-                                            </button>
+                                            
                                             <button 
                                                 onClick={() => handleDelete(evalItem.id)}
                                                 className="text-red-500 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
@@ -282,19 +318,32 @@ export default function TeacherEvaluationHistory({ teacherId, onEvaluate, onBack
                                 <div className="flex gap-2 pt-2 border-t border-gray-100">
                                     <button 
                                         onClick={() => onEvaluate(evalItem.id)}
-                                        className="flex-1 bg-primary-50 text-primary-700 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2"
+                                        className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 ${
+                                            evalItem.status === 'draft' 
+                                            ? 'bg-primary-600 text-white shadow-sm'
+                                            : 'bg-primary-50 text-primary-700'
+                                        }`}
                                     >
-                                        <Eye size={16}/> التفاصيل
+                                        {evalItem.status === 'draft' ? <><PlayCircle size={16}/> استكمال</> : <><Eye size={16}/> التفاصيل</>}
                                     </button>
                                     
                                     {evalItem.status === 'completed' && (
-                                        <button 
-                                            onClick={() => handlePrint(evalItem.id)}
-                                            className="p-2 bg-gray-100 text-gray-600 rounded-lg"
-                                            disabled={loadingPrint && printingEvalId === evalItem.id}
-                                        >
-                                            {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={18} className="animate-spin"/> : <Printer size={18} />}
-                                        </button>
+                                        <>
+                                            <button 
+                                                onClick={() => handleRevert(evalItem.id)}
+                                                className="p-2 bg-orange-50 text-orange-600 rounded-lg border border-orange-100"
+                                                title="إعادة فتح"
+                                            >
+                                                <RotateCcw size={18} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handlePrint(evalItem.id)}
+                                                className="p-2 bg-gray-100 text-gray-600 rounded-lg"
+                                                disabled={loadingPrint && printingEvalId === evalItem.id}
+                                            >
+                                                {loadingPrint && printingEvalId === evalItem.id ? <Loader2 size={18} className="animate-spin"/> : <Printer size={18} />}
+                                            </button>
+                                        </>
                                     )}
                                     
                                     <button 

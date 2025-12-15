@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { MessageSquareWarning, CheckCircle, XCircle, Loader2, Calendar, User, Search, FileText } from 'lucide-react';
+import { MessageSquareWarning, CheckCircle, XCircle, Loader2, Calendar, User, Search, FileText, Eye } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserRole } from '../types';
 
@@ -8,6 +8,7 @@ interface ObjectionsManagementProps {
   schoolId?: string;
   userRole?: UserRole;
   nationalId?: string;
+  onViewEvaluation?: (teacherId: string, evalId: string) => void;
 }
 
 interface ObjectionItem {
@@ -22,7 +23,7 @@ interface ObjectionItem {
     objection_status: 'pending' | 'accepted' | 'rejected' | 'none';
 }
 
-export default function ObjectionsManagement({ schoolId, userRole, nationalId }: ObjectionsManagementProps) {
+export default function ObjectionsManagement({ schoolId, userRole, nationalId, onViewEvaluation }: ObjectionsManagementProps) {
   const [objections, setObjections] = useState<ObjectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'pending' | 'history'>('pending');
@@ -208,6 +209,14 @@ export default function ObjectionsManagement({ schoolId, userRole, nationalId }:
 
                           {obj.objection_status === 'pending' ? (
                               <div className="flex justify-end gap-3 pt-2">
+                                  {onViewEvaluation && (
+                                      <button 
+                                          onClick={() => onViewEvaluation(obj.teacher_id, obj.id)}
+                                          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-bold flex items-center gap-2 transition-colors"
+                                      >
+                                          <Eye size={16} /> مراجعة التقييم
+                                      </button>
+                                  )}
                                   <button 
                                       onClick={() => handleAction(obj.id, 'rejected')}
                                       disabled={processingId === obj.id}

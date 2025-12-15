@@ -60,18 +60,22 @@ export default function SystemSettings() {
   // SQL Script
   const fullSchemaScriptActual = `
 -- ==========================================
--- 1. تحديث هيكلية تعدد الصلاحيات (سجل واحد، أدوار متعددة)
+-- 1. تحديث هيكلية قاعدة البيانات
 -- ==========================================
 
+-- Add necessary columns if they don't exist
 ALTER TABLE teachers ADD COLUMN IF NOT EXISTS roles text[] DEFAULT '{}';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS manager_national_id text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS education_office text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS status text DEFAULT 'draft';
 
+-- Migrate legacy role to roles array
 UPDATE teachers 
 SET roles = array_append(roles, role) 
 WHERE role IS NOT NULL AND (roles IS NULL OR roles = '{}' OR NOT (roles @> ARRAY[role]));
 
+-- Fix Constraints and Indexes
 ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_national_id_key;
 DROP INDEX IF EXISTS idx_teachers_national_id_school_id_role; 
 DROP INDEX IF EXISTS idx_teachers_national_id_school_id;
@@ -85,6 +89,7 @@ ON app_users (email, school_id);
 
 ALTER TABLE school_events ADD COLUMN IF NOT EXISTS school_id uuid REFERENCES schools(id) ON DELETE CASCADE;
 
+-- Create Feedback Bank Table
 create table if not exists feedback_bank (
   id uuid default gen_random_uuid() primary key,
   category text, 

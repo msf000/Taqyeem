@@ -7,7 +7,7 @@ import readXlsxFile from 'read-excel-file';
 import writeXlsxFile from 'write-excel-file';
 
 interface TeacherManagementProps {
-  onEvaluate: (teacherId: string) => void;
+  onEvaluate: (teacherId: string, evaluationId?: string) => void;
   userRole?: UserRole;
   schoolId?: string;
   userName?: string;
@@ -145,16 +145,25 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
         const { data: teachersData, error: teachersError } = await teachersQuery;
         if (teachersError) throw teachersError;
 
-        const { data: evalsData } = await supabase.from('evaluations').select('teacher_id, status').order('created_at', { ascending: false });
+        const { data: evalsData } = await supabase.from('evaluations').select('id, teacher_id, status').order('created_at', { ascending: false });
         const { data: specData } = await supabase.from('specialties').select('*').order('name');
         setSpecialtiesList(specData || []);
 
         const mappedTeachers: Teacher[] = (teachersData || []).map((t: any) => {
             // Find LATEST evaluation
+            // evalsData is ordered by date desc, so .find() gets the most recent
             const evalRecord = evalsData?.find((e: any) => e.teacher_id === t.id);
             let status = EvaluationStatus.NOT_EVALUATED;
+            let lastEvalId = undefined;
+
             if (evalRecord) {
                 status = evalRecord.status === 'completed' ? EvaluationStatus.COMPLETED : EvaluationStatus.DRAFT;
+                
+                // CRITICAL FIX: Only pass ID if it is a DRAFT. 
+                // If Completed, we want 'onEvaluate' to trigger a NEW evaluation, not edit the old one.
+                if (evalRecord.status !== 'completed') {
+                    lastEvalId = evalRecord.id;
+                }
             }
 
             // Normalize roles
@@ -177,7 +186,8 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                 roles: roles,
                 mobile: t.mobile,
                 schoolId: t.school_id,
-                status: status
+                status: status,
+                lastEvaluationId: lastEvalId
             };
         });
 
@@ -354,7 +364,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // ... same as before
     if (!importTargetSchoolId) {
         alert("يرجى اختيار المدرسة أولاً");
         e.target.value = ''; 
@@ -440,7 +449,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
   };
 
   const handleDownloadTemplate = async () => {
-    // ... same as before
     const data = [
       [
         { value: 'الاسم الكامل', fontWeight: 'bold' },
@@ -466,7 +474,7 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
     }
   };
 
-  // Filter & Sorting Logic (Same as before)
+  // Filter & Sorting Logic
   const uniqueSpecialties = Array.from(new Set(teachers.map(t => t.specialty).filter(Boolean)));
   const filteredTeachers = teachers.filter(teacher => {
     const matchesSearch = searchTerm === '' || teacher.name.includes(searchTerm) || teacher.nationalId.includes(searchTerm);
@@ -694,10 +702,10 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                                     </button>
                                                 ) : (
                                                     <button 
-                                                        onClick={() => onEvaluate(teacher.id)}
-                                                        className="text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                                                        onClick={() => onEvaluate(teacher.id, teacher.lastEvaluationId)}
+                                                        className={`${teacher.status === EvaluationStatus.DRAFT ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-white border border-primary-200 text-primary-700 hover:bg-primary-50'} px-3 py-1.5 rounded text-xs font-medium transition-colors shadow-sm`}
                                                     >
-                                                        تقييم
+                                                        {teacher.status === EvaluationStatus.DRAFT ? 'استكمال' : 'تقييم'}
                                                     </button>
                                                 )}
                                                 
@@ -792,10 +800,10 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                                         </button>
                                     ) : (
                                         <button 
-                                            onClick={() => onEvaluate(teacher.id)}
-                                            className="flex-1 bg-primary-600 text-white py-2 rounded-lg text-sm font-bold shadow-sm"
+                                            onClick={() => onEvaluate(teacher.id, teacher.lastEvaluationId)}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-bold shadow-sm ${teacher.status === EvaluationStatus.DRAFT ? 'bg-primary-600 text-white' : 'bg-white border border-primary-200 text-primary-700'}`}
                                         >
-                                            تقييم الآن
+                                            {teacher.status === EvaluationStatus.DRAFT ? 'استكمال التقييم' : 'تقييم الآن'}
                                         </button>
                                     )}
                                     {teacher.mobile && (
@@ -812,6 +820,62 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
             </div>
             <div className="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between hidden md:flex">
                 <span>عرض {filteredTeachers.length} من أصل {teachers.length} معلم</span>
+            </div>
+        </div>
+      )}
+
+      {/* View Teacher Modal */}
+      {viewTeacher && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+                <div className="flex justify-between items-center p-6 border-b">
+                    <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <User size={24} className="text-primary-600"/>
+                        بيانات المعلم
+                    </h3>
+                    <button onClick={() => setViewTeacher(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-2xl font-bold text-gray-500">
+                            {viewTeacher.name.charAt(0)}
+                        </div>
+                        <div>
+                            <h4 className="text-lg font-bold text-gray-900">{viewTeacher.name}</h4>
+                            <p className="text-gray-500">{viewTeacher.category}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <label className="block text-gray-500 text-xs mb-1">رقم الهوية</label>
+                            <p className="font-medium font-mono">{viewTeacher.nationalId}</p>
+                        </div>
+                        <div>
+                            <label className="block text-gray-500 text-xs mb-1">الجوال</label>
+                            <p className="font-medium" dir="ltr">{viewTeacher.mobile || '-'}</p>
+                        </div>
+                        <div>
+                            <label className="block text-gray-500 text-xs mb-1">التخصص</label>
+                            <p className="font-medium">{viewTeacher.specialty}</p>
+                        </div>
+                        <div>
+                            <label className="block text-gray-500 text-xs mb-1">المدرسة</label>
+                            <p className="font-medium">{schools.find(s => s.id === viewTeacher.schoolId)?.name || '-'}</p>
+                        </div>
+                        <div className="col-span-2">
+                            <label className="block text-gray-500 text-xs mb-1">الصلاحيات</label>
+                            <div className="flex gap-2 mt-1">
+                                {viewTeacher.roles && viewTeacher.roles.length > 0 ? (
+                                    viewTeacher.roles.map(r => <span key={r} className="bg-purple-50 text-purple-700 px-2 py-1 rounded text-xs border border-purple-100">{r}</span>)
+                                ) : <span className="text-gray-400">-</span>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
+                    <button onClick={() => setViewTeacher(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 text-sm font-bold">إغلاق</button>
+                </div>
             </div>
         </div>
       )}
@@ -939,63 +1003,6 @@ export default function TeacherManagement({ onEvaluate, userRole, schoolId, user
                   </div>
               </div>
           </div>
-      )}
-
-      {/* View Teacher Modal */}
-      {viewTeacher && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
-                    <div className="flex justify-between items-center p-6 border-b">
-                        <h3 className="text-xl font-bold flex items-center gap-2">
-                            <User className="text-primary-600" /> 
-                            {viewTeacher.name}
-                        </h3>
-                        <button onClick={() => setViewTeacher(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
-                    </div>
-                    <div className="p-6 space-y-4 text-sm">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs text-gray-500 block mb-1">رقم الهوية</label>
-                                <p className="font-mono font-medium">{viewTeacher.nationalId}</p>
-                            </div>
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs text-gray-500 block mb-1">الفئة الوظيفية</label>
-                                <p className="font-medium text-primary-700">{viewTeacher.category}</p>
-                            </div>
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs text-gray-500 block mb-1">التخصص</label>
-                                <p className="font-medium">{viewTeacher.specialty}</p>
-                            </div>
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs text-gray-500 block mb-1">الصلاحيات</label>
-                                <div className="flex flex-wrap gap-1">
-                                    {viewTeacher.roles && viewTeacher.roles.length > 0 ? (
-                                        viewTeacher.roles.map((r, i) => (
-                                            <span key={i} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">{r}</span>
-                                        ))
-                                    ) : (
-                                        <span className="font-medium">{viewTeacher.role || UserRole.TEACHER}</span>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs text-gray-500 block mb-1">رقم الجوال</label>
-                                <p className="font-medium" dir="ltr">{viewTeacher.mobile || '-'}</p>
-                            </div>
-                        </div>
-                        <div className="border-t pt-4">
-                            <label className="text-xs text-gray-500 block mb-2">المدرسة التابع لها</label>
-                            <div className="flex items-center gap-2 font-medium">
-                                <CheckCircle size={16} className="text-green-500"/>
-                                {schools.find(s => s.id === viewTeacher.schoolId)?.name || 'غير محدد'}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="p-6 border-t bg-gray-50 rounded-b-xl flex justify-end">
-                        <button onClick={() => setViewTeacher(null)} className="px-6 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">إغلاق</button>
-                    </div>
-                </div>
-            </div>
       )}
 
       {/* Import View (kept as separate view for space) */}
